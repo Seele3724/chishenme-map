@@ -1,10 +1,12 @@
-# 美食地图
+# 吃什么 · chishenme
 
-按菜系、人均、评分筛选餐厅，地图上一眼看清。支持多城市切换、用户上传餐厅、补充评价。
+> 按菜系、人均、评分筛选餐厅，地图上一眼看清。支持多城市切换、用户上传餐厅、补充评价。
 
 单文件静态站点（`index.html`），无构建步骤、无依赖安装。
 
 当前收录：上海 38 家、北京 10 家、杭州 8 家、成都 8 家（均为演示数据）。
+
+线上地址规划：`https://chishenme.pages.dev`
 
 ## 本地预览
 
@@ -31,13 +33,13 @@ README.md
 
 ### 方式 A：Cloudflare Pages（推荐）
 
-1. 在 GitHub 建一个仓库（可以设为 Private），把本目录推上去。
+1. 在 GitHub 建一个空仓库，名字用 `chishenme`（什么都不要勾选），把本目录推上去。
 2. 打开 https://dash.cloudflare.com → Workers & Pages → Create → Pages → Connect to Git。
 3. 选中这个仓库，构建配置全部留空：
    - Framework preset: `None`
    - Build command: 留空
    - Build output directory: `/`
-4. 点 Save and Deploy，等十几秒，拿到 `https://<项目名>.pages.dev`。
+4. 点 Save and Deploy，等十几秒，拿到 `https://chishenme.pages.dev`。
 
 ### 方式 B：Vercel
 

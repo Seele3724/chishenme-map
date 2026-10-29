@@ -1110,7 +1110,7 @@ function bindUI(){
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "shanghai-food-map-data.json";
+    a.download = "chishenme-data.json";
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast("已导出 JSON");
