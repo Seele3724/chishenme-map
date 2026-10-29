@@ -61,6 +61,28 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 }
 .search input:focus{border-color:#cbbfa8;box-shadow:0 0 0 3px rgba(200,69,42,.07)}
 .search svg{position:absolute;left:11px;top:11px;opacity:.4}
+.search.dest{margin-top:8px}
+.search.dest input{height:34px;font-size:13px;background:#fbf7ef;padding-left:32px}
+.search.dest input:focus{background:#fff}
+.search.dest svg{top:9px;left:10px}
+
+.destbar{
+  display:none;margin-top:8px;align-items:center;gap:7px;
+  background:#fdf3ea;border:1px solid #f0d9c2;border-radius:9px;
+  padding:7px 9px 7px 11px;font-size:12.5px;color:#8a4a22;
+}
+.destbar.on{display:flex}
+.destbar .dname{
+  font-weight:700;color:var(--accent);max-width:140px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.destbar .dcount{color:#9a5a2c;white-space:nowrap}
+.destbar button{
+  margin-left:auto;border:none;background:none;color:#b06a3c;
+  font-size:15px;line-height:1;padding:2px 4px;border-radius:5px;
+}
+.destbar button:hover{background:#f6e2cd}
+#cityChips.locked{opacity:.38;pointer-events:none}
 
 .filters{padding:12px 18px 0;flex:none}
 .frow{display:flex;gap:8px;margin-bottom:9px;align-items:center}
@@ -353,6 +375,15 @@ select.mini{
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d1c1a" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
         <input id="q" type="search" placeholder="搜餐厅名、菜系、地址…" autocomplete="off">
       </div>
+      <div class="search dest">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d1c1a" stroke-width="2.2"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+        <input id="destQ" type="search" placeholder="或以目的地为中心找：搜个地方…" autocomplete="off" enterkeyhint="search">
+      </div>
+      <div class="destbar" id="destBar">
+        <span class="dname" id="dName"></span>
+        <span class="dcount" id="dCount"></span>
+        <button id="destClear" title="清除目的地">✕</button>
+      </div>
     </div>
 
     <div class="filters">
@@ -565,7 +596,8 @@ const state = {
   tempStars: 5,
   pickMode: false,
   newLat: null,
-  newLng: null
+  newLng: null,
+  dest: null          // 目的地筛选：{ name, lat, lng, radius }
 };
 
 const $ = s => document.querySelector(s);
@@ -627,13 +659,32 @@ function toMap(lat, lng){
   return [lat, lng];
 }
 
+/* 两点间球面距离，返回公里 */
+function haversine(lat1, lng1, lat2, lng2){
+  const R = 6371, rad = d => d * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLng = rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 /* =========================================================
    3. 筛选
    ========================================================= */
+/* 当前"范围"：有目的地就按半径跨城市取，否则按城市取 */
+function scopeRest(){
+  if(state.dest){
+    const d = state.dest, km = d.radius / 1000;
+    return allRest().filter(r =>
+      r.lat != null && r.lng != null && haversine(r.lat, r.lng, d.lat, d.lng) <= km
+    );
+  }
+  return allRest().filter(r => r.city === state.city);
+}
+
 function visible(){
   const q = state.q.trim().toLowerCase();
-  let arr = allRest().filter(r => {
-    if(r.city !== state.city) return false;
+  let arr = scopeRest().filter(r => {
     if(state.cuisines.size && !state.cuisines.has(r.cuisine)) return false;
 
     if(state.price !== "all"){
@@ -819,9 +870,174 @@ function setBasemap(bm){
     }).addTo(map);
     tileLayer.bringToBack();
     drawMarkers();
+    drawDestCircle();
     if(state.selectedId){
       const r = findRest(state.selectedId);
       if(r) map.setView(toMap(r.lat, r.lng), map.getZoom());
+    }
+  }
+}
+
+/* =========================================================
+   4b. 目的地搜索（地理编码 + 半径筛选）
+   ========================================================= */
+
+/* 填了高德 Web 服务 key 就走高德（国内更准、额度高），留空则走 Nominatim */
+const AMAP_KEY = "";
+
+let jsonpSeq = 0;
+function jsonp(url, cbParam){
+  cbParam = cbParam || "callback";
+  return new Promise((resolve, reject) => {
+    const name = "__jp" + (++jsonpSeq) + "_" + Date.now();
+    const s = document.createElement("script");
+    let done = false;
+    const cleanup = () => {
+      try{ delete window[name]; }catch(e){ window[name] = undefined; }
+      if(s.parentNode) s.parentNode.removeChild(s);
+    };
+    const timer = setTimeout(() => {
+      if(done) return; done = true; cleanup(); reject(new Error("timeout"));
+    }, 9000);
+    window[name] = data => {
+      if(done) return; done = true; clearTimeout(timer); cleanup(); resolve(data);
+    };
+    s.onerror = () => {
+      if(done) return; done = true; clearTimeout(timer); cleanup(); reject(new Error("network"));
+    };
+    s.src = url + (url.indexOf("?") > -1 ? "&" : "?") + cbParam + "=" + name;
+    document.head.appendChild(s);
+  });
+}
+
+/* 返回 [{ name, lat, lng }] */
+async function geocode(query){
+  if(AMAP_KEY){
+    const u = "https://restapi.amap.com/v3/place/text?keywords=" + encodeURIComponent(query) +
+              "&citylimit=false&offset=6&page=1&extensions=base&key=" + AMAP_KEY;
+    const d = await jsonp(u, "callback");
+    if(d && d.status === "1" && d.pois && d.pois.length){
+      return d.pois.map(p => {
+        const parts = String(p.location).split(",");
+        return { name: p.name, lat: Number(parts[1]), lng: Number(parts[0]) };
+      });
+    }
+    throw new Error("no-result");
+  }
+
+  const u = "https://nominatim.openstreetmap.org/search?format=json&limit=6&accept-language=zh-CN&q=" +
+            encodeURIComponent(query);
+  const d = await jsonp(u, "json_callback");
+  if(!Array.isArray(d) || !d.length) throw new Error("no-result");
+  return d.map(x => ({
+    name: String(x.display_name || "").split(",")[0].trim() || query,
+    lat: Number(x.lat),
+    lng: Number(x.lon)
+  }));
+}
+
+/* 从多个候选里挑一个：优先离某个已知城市最近的那个 */
+function pickPlace(list){
+  let best = list[0], bestCity = null, bestKm = Infinity;
+  list.forEach(c => {
+    CITIES.forEach(city => {
+      const v = CITY_VIEW[city];
+      const km = haversine(c.lat, c.lng, v.center[0], v.center[1]);
+      if(km < bestKm){ bestKm = km; best = c; bestCity = city; }
+    });
+  });
+  return { place: best, city: bestCity, km: bestKm };
+}
+
+let destCircle = null;
+function drawDestCircle(){
+  if(!map) return;
+  if(destCircle){ map.removeLayer(destCircle); destCircle = null; }
+  if(!state.dest) return;
+  destCircle = L.circle(toMap(state.dest.lat, state.dest.lng), {
+    radius: state.dest.radius,
+    color: "#c8452a",
+    weight: 2,
+    opacity: .85,
+    fillColor: "#c8452a",
+    fillOpacity: .05,
+    dashArray: "7 7",
+    interactive: false
+  }).addTo(map);
+}
+
+function renderDestBar(){
+  const bar = $("#destBar");
+  if(!bar) return;
+  if(!state.dest){
+    bar.classList.remove("on");
+    $("#cityChips").classList.remove("locked");
+    return;
+  }
+  bar.classList.add("on");
+  $("#cityChips").classList.add("locked");
+  $("#dName").textContent = state.dest.name;
+  $("#dCount").textContent = "· " + (state.dest.radius / 1000) + " 公里内 " + visible().length + " 家";
+}
+
+function applyDestination(place){
+  state.dest = { name: place.name, lat: place.lat, lng: place.lng, radius: 5000 };
+  state.selectedId = null;
+  $("#detail").classList.remove("open");
+  $("#destQ").value = "";
+
+  drawDestCircle();
+  renderDestBar();
+  refresh();
+
+  if(map){
+    // toBounds(n) 是以中心为界各 n/2 米，所以要把直径传进去才是圆的外接框
+    const b = L.latLng(toMap(state.dest.lat, state.dest.lng)).toBounds(state.dest.radius * 2);
+    map.flyToBounds(b, { padding: [26, 26], duration: .6, maxZoom: 15 });
+  }
+}
+
+function clearDestination(){
+  if(!state.dest) return;
+  state.dest = null;
+  state.selectedId = null;
+  $("#destQ").value = "";
+  drawDestCircle();
+  renderDestBar();
+  const v = CITY_VIEW[state.city];
+  if(map && v) map.setView(toMap(v.center[0], v.center[1]), v.zoom);
+  refresh();
+  toast("已退出目的地筛选");
+}
+
+async function searchDestination(query){
+  query = (query || "").trim();
+  if(!query) return;
+  const input = $("#destQ");
+  if(input) input.blur();
+
+  try{
+    const list = await geocode(query);
+    if(!list.length) throw new Error("no-result");
+    const picked = pickPlace(list);
+    // 目的地明显属于别的城市时，顺手把城市切过去
+    if(picked.city && picked.km < 80 && picked.city !== state.city){
+      state.city = picked.city;
+      document.querySelectorAll("#cityChips .chip").forEach(b => {
+        b.classList.toggle("on", b.dataset.city === picked.city);
+      });
+      $("#brandSeal").textContent = CITY_ABBR[picked.city] || picked.city.slice(0, 1);
+      $("#brandTitle").textContent = picked.city + "美食地图";
+      document.title = picked.city + "美食地图";
+      state.cuisines.clear();
+    }
+    applyDestination(picked.place);
+    toast("已定位到「" + picked.place.name + "」");
+  }catch(err){
+    if(err.message === "no-result"){
+      toast("没找到「" + query + "」，换个说法试试");
+    }else{
+      toast("地点搜索失败，检查网络后重试");
     }
   }
 }
@@ -831,24 +1047,40 @@ function setBasemap(bm){
    ========================================================= */
 function renderList(){
   const list = visible();
-  const total = allRest().filter(r => r.city === state.city).length;
+  const total = scopeRest().length;
   $("#count").textContent = list.length;
   const pill = $("#mpill");
   if(pill) pill.textContent = list.length + " 家";
   const hint = $("#expHint");
-  if(hint) hint.textContent = total ? "点地图上的点看详情" : "这座城市还没收录";
+  if(hint) hint.textContent = state.dest
+    ? (total ? "点地图上的点看详情" : "目的地 5 公里内还没收录")
+    : (total ? "点地图上的点看详情" : "这座城市还没收录");
 
   if(!list.length){
-    $("#list").innerHTML = total === 0
-      ? '<div class="empty">' + esc(state.city) + '还没有收录餐厅<br>' +
+    if(state.dest){
+      $("#list").innerHTML = '<div class="empty">' +
+        '<b>' + esc(state.dest.name) + '</b> 附近 ' + (state.dest.radius / 1000) + ' 公里内<br>' +
+        (total === 0 ? "还没有已添加的餐厅" : "没有符合筛选条件的餐厅") +
+        '<br><span style="font-size:12px;opacity:.75">换个目的地，或放宽筛选</span>' +
+        '</div>';
+    }else if(total === 0){
+      $("#list").innerHTML = '<div class="empty">' + esc(state.city) + '还没有收录餐厅<br>' +
         '<span style="font-size:12px;opacity:.75">先做第一个添加的人</span><br>' +
-        '<button class="linkbtn" data-act="add">＋ 添加一家 ' + esc(state.city) + ' 的餐厅</button></div>'
-      : '<div class="empty">没有符合条件的餐厅<br>试着放宽人均或评分</div>';
+        '<button class="linkbtn" data-act="add">＋ 添加一家 ' + esc(state.city) + ' 的餐厅</button></div>';
+    }else{
+      $("#list").innerHTML = '<div class="empty">没有符合条件的餐厅<br>试着放宽人均或评分</div>';
+    }
     return;
   }
 
   $("#list").innerHTML = list.map(r => {
     const s = statsFor(r);
+    let distTxt = "";
+    if(state.dest){
+      const km = haversine(r.lat, r.lng, state.dest.lat, state.dest.lng);
+      distTxt = '<span class="sep">·</span><span style="color:#9a5a2c">距 ' +
+                esc(state.dest.name) + " " + (km < 1 ? Math.round(km * 1000) + "m" : km.toFixed(1) + "km") + '</span>';
+    }
     return '<article class="card' + (state.selectedId === r.id ? " sel" : "") + '" data-id="' + r.id + '">' +
       '<div class="card-top"><h3>' + esc(r.name) + '</h3>' +
         '<div class="rate">' + (s.rating ? s.rating.toFixed(1) : "—") +
@@ -858,6 +1090,7 @@ function renderList(){
         '<span>¥' + r.price + '/人</span>' +
         '<span class="sep">·</span>' +
         '<span>' + (s.count ? s.count + " 条评价" : "暂无评价") + '</span>' +
+        (state.dest ? distTxt : '<span class="sep">·</span><span>' + esc(r.city) + '</span>') +
       '</div>' +
       '<div class="card-addr">' + esc(r.addr || "地址待补充") + '</div>' +
     '</article>';
@@ -955,7 +1188,7 @@ function paintStars(n){
    ========================================================= */
 function availableCuisines(){
   const set = new Set();
-  allRest().forEach(r => { if(r.city === state.city) set.add(r.cuisine); });
+  scopeRest().forEach(r => set.add(r.cuisine));
   return CUISINES.filter(c => set.has(c));
 }
 
@@ -1014,6 +1247,13 @@ function bindUI(){
     state.q = e.target.value;
     refresh();
   });
+
+  // 目的地搜索
+  $("#destQ").addEventListener("keydown", e => {
+    if(e.key === "Enter"){ e.preventDefault(); searchDestination(e.target.value); }
+    if(e.key === "Escape"){ e.target.value = ""; e.target.blur(); }
+  });
+  $("#destClear").addEventListener("click", clearDestination);
 
   $("#priceSel").addEventListener("change", e => { state.price = e.target.value; refresh(); });
   $("#rateSel").addEventListener("change", e => { state.minRate = Number(e.target.value); refresh(); });
@@ -1155,6 +1395,8 @@ function switchCity(city){
   state.city = city;
   state.selectedId = null;
   state.cuisines.clear();
+  // 切城市就退出目的地视图，两种范围不要混在一起
+  if(state.dest){ state.dest = null; drawDestCircle(); renderDestBar(); }
 
   document.querySelectorAll("#cityChips .chip").forEach(b => {
     b.classList.toggle("on", b.dataset.city === city);
@@ -1241,6 +1483,8 @@ function saveRestaurant(){
   customRest.push(r);
   saveJSON(LS_REST, customRest);
   closeModal();
+  // 加了新店就退出目的地视图，否则新店可能落在圈外看不见
+  if(state.dest){ state.dest = null; drawDestCircle(); renderDestBar(); }
   if(city !== state.city) switchCity(city);
   refresh();
   openDetail(r.id);
@@ -1277,6 +1521,7 @@ function refresh(){
   renderCuisineFilters();
   renderList();
   drawMarkers();
+  renderDestBar();
 }
 
 function boot(){
