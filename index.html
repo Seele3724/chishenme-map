@@ -346,9 +346,9 @@ select.mini{
           <h1 id="brandTitle">上海美食地图</h1>
           <div class="sub">按菜系 · 人均 · 评分找店</div>
         </div>
-        <span class="mpill" id="mpill">38 家</span>
+        <span class="mpill" id="mpill">0 家</span>
       </div>
-      <p class="demo-note">演示数据：评分与人均为模拟值，非真实点评。你添加的餐厅和评价只保存在本机浏览器里。</p>
+      <p class="demo-note">还没有收录任何餐厅。你添加的内容只保存在这台设备的浏览器里，换设备或清缓存就会消失。</p>
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d1c1a" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
         <input id="q" type="search" placeholder="搜餐厅名、菜系、地址…" autocomplete="off">
@@ -360,7 +360,7 @@ select.mini{
         <label style="padding-top:5px">城市</label>
         <div class="chips" id="cityChips"></div>
       </div>
-      <div class="frow" style="align-items:flex-start">
+      <div class="frow" id="cuisineRow" style="align-items:flex-start">
         <label style="padding-top:5px">菜系</label>
         <div class="chips" id="cuisineChips"></div>
       </div>
@@ -489,82 +489,30 @@ const CU_COLOR = {
   "烧烤":"#6d4c41","其他":"#7f8c8d"
 };
 
-const DEMO_SH = [
-  {id:"d01",name:"老吉士酒家",cuisine:"本帮菜",price:180,rating:4.6,count:1284,addr:"徐汇区天平路41号",lat:31.2015,lng:121.4403,tags:["红烧肉","油爆虾","需提前订"],reviews:[{user:"阿汤",stars:5,text:"红烧肉的确名不虚传，肥而不腻，酱色亮。店里小，晚上一定要提前订位。",ts:"2025-11-02"},{user:"momo",stars:4,text:"油爆虾很好吃，就是上菜有点慢，人均偏高了。",ts:"2025-09-18"}]},
-  {id:"d02",name:"兰心餐厅",cuisine:"本帮菜",price:95,rating:4.3,count:2103,addr:"黄浦区进贤路130号",lat:31.2205,lng:121.4687,tags:["浓油赤酱","老字号"],reviews:[{user:"老王",stars:5,text:"本帮菜就该是这个味道，草头圈子一绝。",ts:"2025-10-21"}]},
-  {id:"d03",name:"保罗酒楼",cuisine:"本帮菜",price:110,rating:4.4,count:986,addr:"黄浦区富民路271号",lat:31.2208,lng:121.4632,tags:["红烧肉","人少环境旧"],reviews:[{user:"Lily",stars:4,text:"菜量实在，价格亲民，环境确实旧了点。",ts:"2025-08-30"}]},
-  {id:"d04",name:"上海老饭店",cuisine:"本帮菜",price:200,rating:4.2,count:3120,addr:"黄浦区福佑路242号",lat:31.2275,lng:121.4920,tags:["城隍庙","旅游客多"],reviews:[{user:"小周",stars:4,text:"八宝鸭要提前订，整体偏贵，胜在菜式正统。",ts:"2025-07-11"}]},
-  {id:"d05",name:"人和馆",cuisine:"本帮菜",price:160,rating:4.5,count:742,addr:"静安区愚园路68号",lat:31.2255,lng:121.4512,tags:["环境好","本帮"],reviews:[{user:"Tina",stars:5,text:"老洋房改造的，环境很上海，红烧肉和熏鱼都稳。",ts:"2025-10-05"}]},
-  {id:"d06",name:"光明邨大酒家",cuisine:"本帮菜",price:75,rating:4.1,count:4560,addr:"黄浦区淮海中路588号",lat:31.2208,lng:121.4702,tags:["排队","鲜肉月饼"],reviews:[{user:"排队王",stars:4,text:"点心部永远在排队，鲜肉月饼值得，堂食一般。",ts:"2025-09-02"}]},
-  {id:"d07",name:"瑞福园",cuisine:"本帮菜",price:130,rating:4.4,count:620,addr:"黄浦区淮海中路809号",lat:31.2205,lng:121.4745,tags:["本帮","性价比"],reviews:[{user:"老克勒",stars:4,text:"开了很多年的老店，味道稳定，价格没乱涨。",ts:"2025-06-19"}]},
-  {id:"d08",name:"阿娘面",cuisine:"面点小吃",price:25,rating:4.2,count:1870,addr:"黄浦区思南路36号",lat:31.2145,lng:121.4720,tags:["黄鱼面","苍蝇馆"],reviews:[{user:"面痴",stars:5,text:"黄鱼面汤头鲜，位置小要拼桌，值。",ts:"2025-10-28"}]},
-  {id:"d09",name:"味香斋",cuisine:"面点小吃",price:22,rating:4.3,count:2210,addr:"黄浦区雁荡路14号",lat:31.2190,lng:121.4690,tags:["麻酱面","小笼"],reviews:[{user:"老张",stars:5,text:"麻酱面加小笼，上海最舒服的一顿早饭。",ts:"2025-11-12"}]},
-  {id:"d10",name:"小杨生煎",cuisine:"面点小吃",price:30,rating:4.0,count:8900,addr:"黄浦区吴江路54号",lat:31.2295,lng:121.4622,tags:["连锁","生煎"],reviews:[{user:"Kevin",stars:4,text:"连锁店水平稳定，底脆汁多，就是人多。",ts:"2025-08-08"}]},
-  {id:"d11",name:"大壶春",cuisine:"面点小吃",price:32,rating:4.1,count:3400,addr:"黄浦区云南南路89号",lat:31.2280,lng:121.4795,tags:["生煎","老字号"],reviews:[{user:"阿明",stars:4,text:"褶子朝上的老式生煎，肉馅紧实。",ts:"2025-07-03"}]},
-  {id:"d12",name:"佳家汤包",cuisine:"面点小吃",price:28,rating:4.5,count:4100,addr:"黄浦区黄河路90号",lat:31.2325,lng:121.4700,tags:["汤包","蟹粉"],reviews:[{user:"包子星人",stars:5,text:"皮薄到透明，蟹粉汤包一口爆汁，排队半小时也认。",ts:"2025-10-17"}]},
-  {id:"d13",name:"南翔馒头店",cuisine:"面点小吃",price:60,rating:3.9,count:12000,addr:"黄浦区豫园路85号",lat:31.2270,lng:121.4925,tags:["游客","小笼"],reviews:[{user:"游客甲",stars:3,text:"名气大过人味，二楼比一楼贵不少。",ts:"2025-05-22"}]},
-  {id:"d14",name:"辛香汇",cuisine:"川菜",price:90,rating:4.2,count:5600,addr:"黄浦区西藏中路268号",lat:31.2330,lng:121.4750,tags:["水煮鱼","连锁"],reviews:[{user:"辣不怕",stars:4,text:"水煮鱼量大，够辣，适合一群人来。",ts:"2025-09-27"}]},
-  {id:"d15",name:"玉芝兰",cuisine:"川菜",price:1200,rating:4.8,count:210,addr:"静安区成都北路333号",lat:31.2300,lng:121.4560,tags:["私房菜","需预约","贵"],reviews:[{user:"Foodie",stars:5,text:"川菜的另一面，清淡精细，坐吧台看师傅做菜很值。",ts:"2025-11-08"}]},
-  {id:"d16",name:"马旺子",cuisine:"川菜",price:150,rating:4.6,count:680,addr:"黄浦区马当路245号",lat:31.2160,lng:121.4735,tags:["眉山菜","甜皮鸭"],reviews:[{user:"川渝人",stars:5,text:"甜皮鸭和藤椒钵钵鸡很正宗，辣度是四川的辣度。",ts:"2025-10-11"}]},
-  {id:"d17",name:"眉州东坡",cuisine:"川菜",price:120,rating:4.3,count:3100,addr:"静安区南京西路1266号",lat:31.2285,lng:121.4470,tags:["东坡肘子","连锁"],reviews:[{user:"大陈",stars:4,text:"出品稳定，肘子软烂，商务宴请不容易出错。",ts:"2025-06-30"}]},
-  {id:"d18",name:"利苑",cuisine:"粤菜",price:420,rating:4.6,count:1580,addr:"浦东新区世纪大道8号",lat:31.2380,lng:121.5050,tags:["点心","商务"],reviews:[{user:"粤菜控",stars:5,text:"虾饺和烧卖是我在上海吃到最接近香港的。",ts:"2025-09-14"}]},
-  {id:"d19",name:"唐宫",cuisine:"粤菜",price:160,rating:4.2,count:2400,addr:"静安区南京西路1266号",lat:31.2288,lng:121.4475,tags:["早茶","乳鸽"],reviews:[{user:"早茶党",stars:4,text:"周末早茶要等位，乳鸽和肠粉稳定。",ts:"2025-08-21"}]},
-  {id:"d20",name:"炳胜品味",cuisine:"粤菜",price:260,rating:4.5,count:890,addr:"黄浦区淮海中路999号",lat:31.2185,lng:121.4600,tags:["烧鹅","粤菜"],reviews:[{user:"烧腊粉",stars:5,text:"烧鹅皮脆，蘸酸梅酱，很正。",ts:"2025-10-02"}]},
-  {id:"d21",name:"甬府",cuisine:"其他",price:450,rating:4.7,count:320,addr:"黄浦区中山东一路18号",lat:31.2400,lng:121.4900,tags:["宁波菜","江景"],reviews:[{user:"海鲜控",stars:5,text:"黄鱼和咸蟹做得极好，靠窗能看到江景。",ts:"2025-07-25"}]},
-  {id:"d22",name:"新荣记",cuisine:"其他",price:520,rating:4.8,count:410,addr:"静安区北京西路1701号",lat:31.2340,lng:121.4460,tags:["台州菜","需预约"],reviews:[{user:"老饕",stars:5,text:"沙蒜豆面和家烧黄鱼，贵但确实好。",ts:"2025-11-01"}]},
-  {id:"d23",name:"鮨一",cuisine:"日料",price:680,rating:4.7,count:240,addr:"静安区巨鹿路889号",lat:31.2195,lng:121.4560,tags:["omakase","需预约"],reviews:[{user:"寿司党",stars:5,text:"鱼生新鲜，师傅节奏舒服，性价比在omakase里算高。",ts:"2025-09-09"}]},
-  {id:"d24",name:"一风堂",cuisine:"日料",price:70,rating:4.1,count:3800,addr:"静安区南京西路1601号",lat:31.2290,lng:121.4420,tags:["拉面","连锁"],reviews:[{user:"面屋",stars:4,text:"赤丸新味还是那个味，午市套餐划算。",ts:"2025-08-14"}]},
-  {id:"d25",name:"鸟元",cuisine:"日料",price:220,rating:4.5,count:760,addr:"静安区愚园路300号",lat:31.2235,lng:121.4470,tags:["烧鸟","清酒"],reviews:[{user:"夜宵人",stars:5,text:"鸡皮和鸡软骨烤得极好，清酒选择多。",ts:"2025-10-30"}]},
-  {id:"d26",name:"Ultraviolet",cuisine:"西餐",price:4500,rating:4.9,count:96,addr:"黄浦区中山东一路22号",lat:31.2410,lng:121.4910,tags:["米其林三星","需提前很久订"],reviews:[{user:"打卡王",stars:5,text:"一生一次级别的体验，投影和菜品配合得很妙。",ts:"2025-04-06"}]},
-  {id:"d27",name:"Jean-Georges",cuisine:"西餐",price:1100,rating:4.7,count:620,addr:"黄浦区中山东一路3号",lat:31.2395,lng:121.4905,tags:["法餐","外滩"],reviews:[{user:"Alvin",stars:5,text:"外滩景观位加分，鹅肝和舒芙蕾都稳。",ts:"2025-09-05"}]},
-  {id:"d28",name:"Mercato",cuisine:"西餐",price:600,rating:4.5,count:540,addr:"黄浦区中山东一路3号",lat:31.2393,lng:121.4908,tags:["意大利菜","江景"],reviews:[{user:"Cinzia",stars:4,text:"黑松露披萨很香，人均偏高但景观值。",ts:"2025-06-12"}]},
-  {id:"d29",name:"海底捞",cuisine:"火锅",price:130,rating:4.3,count:9800,addr:"黄浦区南京东路299号",lat:31.2375,lng:121.4790,tags:["服务","连锁"],reviews:[{user:"夜猫",stars:4,text:"凌晨也能吃，服务没话说。",ts:"2025-07-19"}]},
-  {id:"d30",name:"珮姐老火锅",cuisine:"火锅",price:140,rating:4.4,count:2100,addr:"静安区南京西路818号",lat:31.2288,lng:121.4520,tags:["重庆火锅","牛油"],reviews:[{user:"红汤",stars:4,text:"牛油锅底够味，毛肚脆，就是油烟大。",ts:"2025-08-26"}]},
-  {id:"d31",name:"巴奴毛肚火锅",cuisine:"火锅",price:160,rating:4.5,count:1500,addr:"浦东新区陆家嘴西路168号",lat:31.2400,lng:121.5010,tags:["毛肚","菌汤"],reviews:[{user:"毛肚爱好者",stars:5,text:"毛肚确实比别家脆，菌汤锅底意外地好喝。",ts:"2025-10-09"}]},
-  {id:"d32",name:"% Arabica",cuisine:"咖啡甜品",price:40,rating:4.4,count:1600,addr:"徐汇区武康路376号",lat:31.2095,lng:121.4380,tags:["咖啡","打卡"],reviews:[{user:"咖啡因",stars:4,text:"拿铁不错，武康路这家位置好，人永远多。",ts:"2025-09-21"}]},
-  {id:"d33",name:"Manner Coffee",cuisine:"咖啡甜品",price:25,rating:4.2,count:5200,addr:"静安区铜仁路88号",lat:31.2255,lng:121.4560,tags:["性价比","自带杯减5元"],reviews:[{user:"打工人",stars:4,text:"自带杯减五块，日常口粮咖啡首选。",ts:"2025-11-15"}]},
-  {id:"d34",name:"Seesaw Coffee",cuisine:"咖啡甜品",price:45,rating:4.3,count:2100,addr:"徐汇区愚园路433号",lat:31.2225,lng:121.4405,tags:["精品咖啡","甜品"],reviews:[{user:"豆子",stars:4,text:"手冲选择多，环境适合坐一下午。",ts:"2025-08-03"}]},
-  {id:"d35",name:"蔡嘉法式甜品",cuisine:"咖啡甜品",price:80,rating:4.2,count:900,addr:"静安区南京西路1515号",lat:31.2288,lng:121.4445,tags:["拿破仑","法甜"],reviews:[{user:"甜品控",stars:4,text:"拿破仑酥皮层次好，价格不便宜。",ts:"2025-05-16"}]},
-  {id:"d36",name:"丰茂烤串",cuisine:"烧烤",price:110,rating:4.2,count:3400,addr:"长宁区定西路825号",lat:31.2195,lng:121.4230,tags:["自助烤","夜宵"],reviews:[{user:"夜宵王",stars:4,text:"自己烤，羊肉串不错，适合一群人喝酒。",ts:"2025-09-30"}]},
-  {id:"d37",name:"很久以前羊肉串",cuisine:"烧烤",price:120,rating:4.4,count:2600,addr:"黄浦区淮海中路300号",lat:31.2185,lng:121.4655,tags:["羊肉串","自动烤炉"],reviews:[{user:"内蒙人",stars:5,text:"羊肉没有膻味，自动转炉很省事。",ts:"2025-10-24"}]},
-  {id:"d38",name:"大董",cuisine:"其他",price:380,rating:4.4,count:1200,addr:"静安区南京西路1266号",lat:31.2287,lng:121.4472,tags:["烤鸭","意境菜"],reviews:[{user:"北京胃",stars:4,text:"烤鸭皮脆，摆盘好看，人均偏高。",ts:"2025-06-08"}]}
-];
+/* ------------------------------------------------------------------
+   餐厅数据
+   目前全部为空，六个城市都从零开始。
+   以后要加一条，按这个格式写进对应城市的数组：
 
-/* ---------- 其他城市（演示数据，同样为模拟评分） ---------- */
-const DEMO_BJ = [
-  {id:"b01",name:"四季民福烤鸭店",cuisine:"其他",price:180,rating:4.6,count:3200,addr:"东城区南池子大街11号",lat:39.9165,lng:116.4030,tags:["烤鸭","需排队"],reviews:[{user:"老北京",stars:5,text:"鸭子皮脆肉嫩，故宫店景观好，得早点去拿号。",ts:"2025-10-14"}]},
-  {id:"b02",name:"大董（团结湖店）",cuisine:"其他",price:380,rating:4.4,count:1200,addr:"朝阳区团结湖北口3号",lat:39.9330,lng:116.4610,tags:["烤鸭","意境菜"],reviews:[{user:"阿May",stars:4,text:"摆盘讲究，烤鸭稳定，人均偏高。",ts:"2025-09-08"}]},
-  {id:"b03",name:"海底捞（王府井店）",cuisine:"火锅",price:130,rating:4.3,count:8400,addr:"东城区王府井大街138号",lat:39.9145,lng:116.4105,tags:["服务","连锁"],reviews:[{user:"夜猫",stars:4,text:"凌晨还开着，服务没得说。",ts:"2025-08-19"}]},
-  {id:"b04",name:"胡大饭馆",cuisine:"其他",price:150,rating:4.3,count:4200,addr:"东城区东直门内大街233号",lat:39.9410,lng:116.4260,tags:["小龙虾","簋街"],reviews:[{user:"夏夜",stars:4,text:"麻辣小龙虾很过瘾，旺季要排两小时。",ts:"2025-07-22"}]},
-  {id:"b05",name:"姚记炒肝店",cuisine:"面点小吃",price:25,rating:4.0,count:3100,addr:"东城区鼓楼东大街311号",lat:39.9415,lng:116.3975,tags:["炒肝","包子"],reviews:[{user:"胡同串子",stars:4,text:"炒肝配包子，老北京早饭就是这个味。",ts:"2025-06-30"}]},
-  {id:"b06",name:"护国寺小吃",cuisine:"面点小吃",price:30,rating:4.1,count:2800,addr:"西城区护国寺大街93号",lat:39.9375,lng:116.3760,tags:["豆汁","焦圈"],reviews:[{user:"吃主儿",stars:4,text:"豆汁第一次喝可能接受不了，但很正宗。",ts:"2025-05-11"}]},
-  {id:"b07",name:"全聚德（前门店）",cuisine:"其他",price:260,rating:3.9,count:6800,addr:"东城区前门大街30号",lat:39.8995,lng:116.3960,tags:["老字号","旅游客多"],reviews:[{user:"过客",stars:3,text:"名气大，价格高，味道中规中矩。",ts:"2025-04-26"}]},
-  {id:"b08",name:"方砖厂69号炸酱面",cuisine:"面点小吃",price:35,rating:4.2,count:1900,addr:"东城区方砖厂胡同69号",lat:39.9360,lng:116.3960,tags:["炸酱面","小馆"],reviews:[{user:"面条控",stars:5,text:"就是家里的味道，面码给得足。",ts:"2025-09-17"}]},
-  {id:"b09",name:"京兆尹",cuisine:"其他",price:600,rating:4.5,count:380,addr:"东城区五道营胡同2号",lat:39.9465,lng:116.4020,tags:["素食","四合院"],reviews:[{user:"吃素的朋友",stars:5,text:"四合院环境很好，素食能做到这个层次不容易。",ts:"2025-10-01"}]},
-  {id:"b10",name:"Migas Mercado",cuisine:"西餐",price:400,rating:4.4,count:520,addr:"朝阳区三里屯路19号",lat:39.9360,lng:116.4550,tags:["西班牙菜","露台"],reviews:[{user:"Luis",stars:4,text:"海鲜饭不错，露台看三里屯夜景。",ts:"2025-08-05"}]}
-];
+   {
+     id: "s01",                              // 唯一即可
+     name: "老吉士酒家",
+     cuisine: "本帮菜",                        // 必须是 CUISINES 里的一项
+     price: 180,                             // 人均，整数
+     rating: 4.6,                            // 0-5，没有就写 0
+     count: 1284,                            // 已有评价条数，没有就写 0
+     addr: "徐汇区天平路41号",
+     lat: 31.2015, lng: 121.4403,            // 坐标（WGS84）
+     tags: ["红烧肉"],
+     reviews: [{ user: "阿汤", stars: 5, text: "……", ts: "2025-11-02" }]
+   }
 
-const DEMO_HZ = [
-  {id:"h01",name:"楼外楼",cuisine:"其他",price:180,rating:4.2,count:5200,addr:"西湖区孤山路30号",lat:30.2545,lng:120.1425,tags:["西湖醋鱼","老字号"],reviews:[{user:"杭州人",stars:4,text:"景观一流，西湖醋鱼见仁见智，东坡肉稳。",ts:"2025-09-25"}]},
-  {id:"h02",name:"外婆家（湖滨店）",cuisine:"其他",price:70,rating:4.0,count:9800,addr:"上城区湖滨路22号",lat:30.2510,lng:120.1630,tags:["杭帮菜","排队"],reviews:[{user:"学生党",stars:4,text:"性价比高，饭点排队一小时起。",ts:"2025-07-14"}]},
-  {id:"h03",name:"绿茶餐厅（龙井路店）",cuisine:"其他",price:90,rating:4.1,count:6100,addr:"西湖区龙井路83号",lat:30.2340,lng:120.1290,tags:["杭帮菜","茶园"],reviews:[{user:"春天",stars:4,text:"坐在茶园里吃饭，环境很加分。",ts:"2025-04-18"}]},
-  {id:"h04",name:"知味观（仁和路总店）",cuisine:"面点小吃",price:60,rating:4.1,count:4300,addr:"上城区仁和路83号",lat:30.2500,lng:120.1655,tags:["小笼","猫耳朵"],reviews:[{user:"点心控",stars:4,text:"鲜肉小笼和猫耳朵都值得点。",ts:"2025-06-07"}]},
-  {id:"h05",name:"新白鹿餐厅",cuisine:"其他",price:80,rating:4.2,count:3800,addr:"拱墅区延安路530号",lat:30.2600,lng:120.1690,tags:["杭帮菜","性价比"],reviews:[{user:"阿杰",stars:4,text:"人均八十吃到撑，工作日晚饭首选。",ts:"2025-08-28"}]},
-  {id:"h06",name:"桂语山房",cuisine:"其他",price:500,rating:4.6,count:260,addr:"西湖区满觉陇路2号",lat:30.2270,lng:120.1230,tags:["创意菜","山景"],reviews:[{user:"慢生活",stars:5,text:"满觉陇山里的餐厅，环境安静，菜有想法。",ts:"2025-10-20"}]},
-  {id:"h07",name:"弄堂里（胜利河店）",cuisine:"其他",price:70,rating:4.1,count:2100,addr:"拱墅区胜利河美食街",lat:30.2900,lng:120.1480,tags:["夜宵","杭帮菜"],reviews:[{user:"夜猫子",stars:4,text:"晚上人多热闹，菜品中规中矩。",ts:"2025-05-30"}]},
-  {id:"h08",name:"湖滨28",cuisine:"其他",price:350,rating:4.5,count:300,addr:"上城区湖滨路28号",lat:30.2515,lng:120.1620,tags:["杭帮菜","湖景"],reviews:[{user:"商务饭",stars:5,text:"西湖边请客的好选择，服务到位。",ts:"2025-09-12"}]}
-];
-
-const DEMO_CD = [
-  {id:"c01",name:"马旺子（宽窄巷子店）",cuisine:"川菜",price:150,rating:4.6,count:1800,addr:"青羊区奎星楼街",lat:30.6700,lng:104.0560,tags:["眉山菜","甜皮鸭"],reviews:[{user:"成都人",stars:5,text:"甜皮鸭和藤椒钵钵鸡，正宗得不像景区店。",ts:"2025-10-16"}]},
-  {id:"c02",name:"明婷饭店",cuisine:"川菜",price:60,rating:4.7,count:2600,addr:"金牛区抚琴西路",lat:30.6800,lng:104.0400,tags:["苍蝇馆","脑花豆腐"],reviews:[{user:"老饕",stars:5,text:"环境很破，菜是真的好吃，脑花豆腐必点。",ts:"2025-09-03"}]},
-  {id:"c03",name:"小龙翻大江",cuisine:"火锅",price:140,rating:4.4,count:3200,addr:"锦江区下东大街",lat:30.6520,lng:104.0830,tags:["火锅","氛围"],reviews:[{user:"辣妹子",stars:4,text:"锅底够狠，环境有川西味道。",ts:"2025-08-11"}]},
-  {id:"c04",name:"蜀大侠火锅",cuisine:"火锅",price:120,rating:4.3,count:4100,addr:"锦江区红星路三段",lat:30.6570,lng:104.0810,tags:["火锅","连锁"],reviews:[{user:"火锅爱好者",stars:4,text:"排队久，毛肚和黄喉新鲜。",ts:"2025-07-06"}]},
-  {id:"c05",name:"甘记肥肠粉",cuisine:"面点小吃",price:20,rating:4.5,count:1900,addr:"锦江区大墙东街",lat:30.6530,lng:104.0790,tags:["肥肠粉","锅盔"],reviews:[{user:"早饭党",stars:5,text:"肥肠粉加锅盔，二十块钱吃到满足。",ts:"2025-10-08"}]},
-  {id:"c06",name:"钟水饺（总店）",cuisine:"面点小吃",price:25,rating:4.2,count:2200,addr:"青羊区提督街",lat:30.6620,lng:104.0730,tags:["红油水饺","老字号"],reviews:[{user:"老成都",stars:4,text:"红油水饺甜辣，味道没变过。",ts:"2025-06-22"}]},
-  {id:"c07",name:"玉林串串香",cuisine:"火锅",price:70,rating:4.3,count:1500,addr:"武侯区玉林路",lat:30.6390,lng:104.0530,tags:["串串","夜宵"],reviews:[{user:"夜宵人",stars:4,text:"签子论斤称，很实惠，晚上很热闹。",ts:"2025-08-17"}]},
-  {id:"c08",name:"陈麻婆豆腐",cuisine:"川菜",price:70,rating:4.4,count:2600,addr:"青羊区西玉龙街",lat:30.6680,lng:104.0700,tags:["麻婆豆腐","老字号"],reviews:[{user:"豆腐控",stars:5,text:"麻婆豆腐麻辣鲜香，配饭能吃两碗。",ts:"2025-09-29"}]}
-];
+   城市不用写，会按所属数组自动挂上。
+   ------------------------------------------------------------------ */
+const DEMO_SH = [];
+const DEMO_BJ = [];
+const DEMO_HZ = [];
+const DEMO_CD = [];
 
 const CITY_DATA = {
   "上海": DEMO_SH,
@@ -1013,6 +961,11 @@ function availableCuisines(){
 
 function renderCuisineFilters(){
   const list = availableCuisines();
+
+  // 这座城市一条数据都没有时，菜系筛选和图例都没有意义，直接收起来
+  const row = $("#cuisineRow");
+  if(row) row.style.display = list.length ? "" : "none";
+
   $("#cuisineChips").innerHTML =
     '<button class="chip' + (state.cuisines.size ? "" : " on") + '" data-cu="__all">全部</button>' +
     list.map(c =>
@@ -1021,9 +974,12 @@ function renderCuisineFilters(){
     ).join("");
 
   const legend = $("#legend");
-  if(legend) legend.innerHTML =
-    list.map(c => '<i><span class="dot" style="background:' + cuColor(c) + '"></span>' + c + "</i>").join("") +
-    '<i style="color:#a89f8f;margin-left:2px">点越大 · 评价越多</i>';
+  if(legend){
+    legend.style.display = list.length ? "" : "none";
+    legend.innerHTML =
+      list.map(c => '<i><span class="dot" style="background:' + cuColor(c) + '"></span>' + c + "</i>").join("") +
+      '<i style="color:#a89f8f;margin-left:2px">点越大 · 评价越多</i>';
+  }
 }
 
 function bindUI(){
