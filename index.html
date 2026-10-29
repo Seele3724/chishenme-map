@@ -333,9 +333,9 @@ select.mini{
     <div class="grab" id="grab"></div>
     <div class="phead">
       <div class="brand">
-        <div class="seal">沪</div>
+        <div class="seal" id="brandSeal">沪</div>
         <div>
-          <h1>上海美食地图</h1>
+          <h1 id="brandTitle">上海美食地图</h1>
           <div class="sub">按菜系 · 人均 · 评分找店</div>
         </div>
         <span class="mpill" id="mpill">38 家</span>
@@ -348,6 +348,10 @@ select.mini{
     </div>
 
     <div class="filters">
+      <div class="frow" style="align-items:flex-start">
+        <label style="padding-top:5px">城市</label>
+        <div class="chips" id="cityChips"></div>
+      </div>
       <div class="frow" style="align-items:flex-start">
         <label style="padding-top:5px">菜系</label>
         <div class="chips" id="cuisineChips"></div>
@@ -431,13 +435,17 @@ select.mini{
     </div>
     <div class="grid2">
       <div class="mrow">
+        <label>城市 <i>*</i></label>
+        <select id="fCity"></select>
+      </div>
+      <div class="mrow">
         <label>菜系 <i>*</i></label>
         <select id="fCuisine"></select>
       </div>
-      <div class="mrow">
-        <label>人均（元） <i>*</i></label>
-        <input id="fPrice" type="number" min="0" step="1" placeholder="80">
-      </div>
+    </div>
+    <div class="mrow">
+      <label>人均（元） <i>*</i></label>
+      <input id="fPrice" type="number" min="0" step="1" placeholder="80">
     </div>
     <div class="mrow">
       <label>地址</label>
@@ -473,7 +481,7 @@ const CU_COLOR = {
   "烧烤":"#6d4c41","其他":"#7f8c8d"
 };
 
-const DEMO = [
+const DEMO_SH = [
   {id:"d01",name:"老吉士酒家",cuisine:"本帮菜",price:180,rating:4.6,count:1284,addr:"徐汇区天平路41号",lat:31.2015,lng:121.4403,tags:["红烧肉","油爆虾","需提前订"],reviews:[{user:"阿汤",stars:5,text:"红烧肉的确名不虚传，肥而不腻，酱色亮。店里小，晚上一定要提前订位。",ts:"2025-11-02"},{user:"momo",stars:4,text:"油爆虾很好吃，就是上菜有点慢，人均偏高了。",ts:"2025-09-18"}]},
   {id:"d02",name:"兰心餐厅",cuisine:"本帮菜",price:95,rating:4.3,count:2103,addr:"黄浦区进贤路130号",lat:31.2205,lng:121.4687,tags:["浓油赤酱","老字号"],reviews:[{user:"老王",stars:5,text:"本帮菜就该是这个味道，草头圈子一绝。",ts:"2025-10-21"}]},
   {id:"d03",name:"保罗酒楼",cuisine:"本帮菜",price:110,rating:4.4,count:986,addr:"黄浦区富民路271号",lat:31.2208,lng:121.4632,tags:["红烧肉","人少环境旧"],reviews:[{user:"Lily",stars:4,text:"菜量实在，价格亲民，环境确实旧了点。",ts:"2025-08-30"}]},
@@ -514,6 +522,55 @@ const DEMO = [
   {id:"d38",name:"大董",cuisine:"其他",price:380,rating:4.4,count:1200,addr:"静安区南京西路1266号",lat:31.2287,lng:121.4472,tags:["烤鸭","意境菜"],reviews:[{user:"北京胃",stars:4,text:"烤鸭皮脆，摆盘好看，人均偏高。",ts:"2025-06-08"}]}
 ];
 
+/* ---------- 其他城市（演示数据，同样为模拟评分） ---------- */
+const DEMO_BJ = [
+  {id:"b01",name:"四季民福烤鸭店",cuisine:"其他",price:180,rating:4.6,count:3200,addr:"东城区南池子大街11号",lat:39.9165,lng:116.4030,tags:["烤鸭","需排队"],reviews:[{user:"老北京",stars:5,text:"鸭子皮脆肉嫩，故宫店景观好，得早点去拿号。",ts:"2025-10-14"}]},
+  {id:"b02",name:"大董（团结湖店）",cuisine:"其他",price:380,rating:4.4,count:1200,addr:"朝阳区团结湖北口3号",lat:39.9330,lng:116.4610,tags:["烤鸭","意境菜"],reviews:[{user:"阿May",stars:4,text:"摆盘讲究，烤鸭稳定，人均偏高。",ts:"2025-09-08"}]},
+  {id:"b03",name:"海底捞（王府井店）",cuisine:"火锅",price:130,rating:4.3,count:8400,addr:"东城区王府井大街138号",lat:39.9145,lng:116.4105,tags:["服务","连锁"],reviews:[{user:"夜猫",stars:4,text:"凌晨还开着，服务没得说。",ts:"2025-08-19"}]},
+  {id:"b04",name:"胡大饭馆",cuisine:"其他",price:150,rating:4.3,count:4200,addr:"东城区东直门内大街233号",lat:39.9410,lng:116.4260,tags:["小龙虾","簋街"],reviews:[{user:"夏夜",stars:4,text:"麻辣小龙虾很过瘾，旺季要排两小时。",ts:"2025-07-22"}]},
+  {id:"b05",name:"姚记炒肝店",cuisine:"面点小吃",price:25,rating:4.0,count:3100,addr:"东城区鼓楼东大街311号",lat:39.9415,lng:116.3975,tags:["炒肝","包子"],reviews:[{user:"胡同串子",stars:4,text:"炒肝配包子，老北京早饭就是这个味。",ts:"2025-06-30"}]},
+  {id:"b06",name:"护国寺小吃",cuisine:"面点小吃",price:30,rating:4.1,count:2800,addr:"西城区护国寺大街93号",lat:39.9375,lng:116.3760,tags:["豆汁","焦圈"],reviews:[{user:"吃主儿",stars:4,text:"豆汁第一次喝可能接受不了，但很正宗。",ts:"2025-05-11"}]},
+  {id:"b07",name:"全聚德（前门店）",cuisine:"其他",price:260,rating:3.9,count:6800,addr:"东城区前门大街30号",lat:39.8995,lng:116.3960,tags:["老字号","旅游客多"],reviews:[{user:"过客",stars:3,text:"名气大，价格高，味道中规中矩。",ts:"2025-04-26"}]},
+  {id:"b08",name:"方砖厂69号炸酱面",cuisine:"面点小吃",price:35,rating:4.2,count:1900,addr:"东城区方砖厂胡同69号",lat:39.9360,lng:116.3960,tags:["炸酱面","小馆"],reviews:[{user:"面条控",stars:5,text:"就是家里的味道，面码给得足。",ts:"2025-09-17"}]},
+  {id:"b09",name:"京兆尹",cuisine:"其他",price:600,rating:4.5,count:380,addr:"东城区五道营胡同2号",lat:39.9465,lng:116.4020,tags:["素食","四合院"],reviews:[{user:"吃素的朋友",stars:5,text:"四合院环境很好，素食能做到这个层次不容易。",ts:"2025-10-01"}]},
+  {id:"b10",name:"Migas Mercado",cuisine:"西餐",price:400,rating:4.4,count:520,addr:"朝阳区三里屯路19号",lat:39.9360,lng:116.4550,tags:["西班牙菜","露台"],reviews:[{user:"Luis",stars:4,text:"海鲜饭不错，露台看三里屯夜景。",ts:"2025-08-05"}]}
+];
+
+const DEMO_HZ = [
+  {id:"h01",name:"楼外楼",cuisine:"其他",price:180,rating:4.2,count:5200,addr:"西湖区孤山路30号",lat:30.2545,lng:120.1425,tags:["西湖醋鱼","老字号"],reviews:[{user:"杭州人",stars:4,text:"景观一流，西湖醋鱼见仁见智，东坡肉稳。",ts:"2025-09-25"}]},
+  {id:"h02",name:"外婆家（湖滨店）",cuisine:"其他",price:70,rating:4.0,count:9800,addr:"上城区湖滨路22号",lat:30.2510,lng:120.1630,tags:["杭帮菜","排队"],reviews:[{user:"学生党",stars:4,text:"性价比高，饭点排队一小时起。",ts:"2025-07-14"}]},
+  {id:"h03",name:"绿茶餐厅（龙井路店）",cuisine:"其他",price:90,rating:4.1,count:6100,addr:"西湖区龙井路83号",lat:30.2340,lng:120.1290,tags:["杭帮菜","茶园"],reviews:[{user:"春天",stars:4,text:"坐在茶园里吃饭，环境很加分。",ts:"2025-04-18"}]},
+  {id:"h04",name:"知味观（仁和路总店）",cuisine:"面点小吃",price:60,rating:4.1,count:4300,addr:"上城区仁和路83号",lat:30.2500,lng:120.1655,tags:["小笼","猫耳朵"],reviews:[{user:"点心控",stars:4,text:"鲜肉小笼和猫耳朵都值得点。",ts:"2025-06-07"}]},
+  {id:"h05",name:"新白鹿餐厅",cuisine:"其他",price:80,rating:4.2,count:3800,addr:"拱墅区延安路530号",lat:30.2600,lng:120.1690,tags:["杭帮菜","性价比"],reviews:[{user:"阿杰",stars:4,text:"人均八十吃到撑，工作日晚饭首选。",ts:"2025-08-28"}]},
+  {id:"h06",name:"桂语山房",cuisine:"其他",price:500,rating:4.6,count:260,addr:"西湖区满觉陇路2号",lat:30.2270,lng:120.1230,tags:["创意菜","山景"],reviews:[{user:"慢生活",stars:5,text:"满觉陇山里的餐厅，环境安静，菜有想法。",ts:"2025-10-20"}]},
+  {id:"h07",name:"弄堂里（胜利河店）",cuisine:"其他",price:70,rating:4.1,count:2100,addr:"拱墅区胜利河美食街",lat:30.2900,lng:120.1480,tags:["夜宵","杭帮菜"],reviews:[{user:"夜猫子",stars:4,text:"晚上人多热闹，菜品中规中矩。",ts:"2025-05-30"}]},
+  {id:"h08",name:"湖滨28",cuisine:"其他",price:350,rating:4.5,count:300,addr:"上城区湖滨路28号",lat:30.2515,lng:120.1620,tags:["杭帮菜","湖景"],reviews:[{user:"商务饭",stars:5,text:"西湖边请客的好选择，服务到位。",ts:"2025-09-12"}]}
+];
+
+const DEMO_CD = [
+  {id:"c01",name:"马旺子（宽窄巷子店）",cuisine:"川菜",price:150,rating:4.6,count:1800,addr:"青羊区奎星楼街",lat:30.6700,lng:104.0560,tags:["眉山菜","甜皮鸭"],reviews:[{user:"成都人",stars:5,text:"甜皮鸭和藤椒钵钵鸡，正宗得不像景区店。",ts:"2025-10-16"}]},
+  {id:"c02",name:"明婷饭店",cuisine:"川菜",price:60,rating:4.7,count:2600,addr:"金牛区抚琴西路",lat:30.6800,lng:104.0400,tags:["苍蝇馆","脑花豆腐"],reviews:[{user:"老饕",stars:5,text:"环境很破，菜是真的好吃，脑花豆腐必点。",ts:"2025-09-03"}]},
+  {id:"c03",name:"小龙翻大江",cuisine:"火锅",price:140,rating:4.4,count:3200,addr:"锦江区下东大街",lat:30.6520,lng:104.0830,tags:["火锅","氛围"],reviews:[{user:"辣妹子",stars:4,text:"锅底够狠，环境有川西味道。",ts:"2025-08-11"}]},
+  {id:"c04",name:"蜀大侠火锅",cuisine:"火锅",price:120,rating:4.3,count:4100,addr:"锦江区红星路三段",lat:30.6570,lng:104.0810,tags:["火锅","连锁"],reviews:[{user:"火锅爱好者",stars:4,text:"排队久，毛肚和黄喉新鲜。",ts:"2025-07-06"}]},
+  {id:"c05",name:"甘记肥肠粉",cuisine:"面点小吃",price:20,rating:4.5,count:1900,addr:"锦江区大墙东街",lat:30.6530,lng:104.0790,tags:["肥肠粉","锅盔"],reviews:[{user:"早饭党",stars:5,text:"肥肠粉加锅盔，二十块钱吃到满足。",ts:"2025-10-08"}]},
+  {id:"c06",name:"钟水饺（总店）",cuisine:"面点小吃",price:25,rating:4.2,count:2200,addr:"青羊区提督街",lat:30.6620,lng:104.0730,tags:["红油水饺","老字号"],reviews:[{user:"老成都",stars:4,text:"红油水饺甜辣，味道没变过。",ts:"2025-06-22"}]},
+  {id:"c07",name:"玉林串串香",cuisine:"火锅",price:70,rating:4.3,count:1500,addr:"武侯区玉林路",lat:30.6390,lng:104.0530,tags:["串串","夜宵"],reviews:[{user:"夜宵人",stars:4,text:"签子论斤称，很实惠，晚上很热闹。",ts:"2025-08-17"}]},
+  {id:"c08",name:"陈麻婆豆腐",cuisine:"川菜",price:70,rating:4.4,count:2600,addr:"青羊区西玉龙街",lat:30.6680,lng:104.0700,tags:["麻婆豆腐","老字号"],reviews:[{user:"豆腐控",stars:5,text:"麻婆豆腐麻辣鲜香，配饭能吃两碗。",ts:"2025-09-29"}]}
+];
+
+const CITY_DATA = { "上海": DEMO_SH, "北京": DEMO_BJ, "杭州": DEMO_HZ, "成都": DEMO_CD };
+Object.keys(CITY_DATA).forEach(c => CITY_DATA[c].forEach(r => { r.city = c; }));
+const DEMO = [].concat(DEMO_SH, DEMO_BJ, DEMO_HZ, DEMO_CD);
+
+const CITIES = Object.keys(CITY_DATA);
+const CITY_ABBR = { "上海": "沪", "北京": "京", "杭州": "杭", "成都": "蓉" };
+const CITY_VIEW = {
+  "上海": { center: [31.2260, 121.4700], zoom: 13 },
+  "北京": { center: [39.9200, 116.4150], zoom: 12 },
+  "杭州": { center: [30.2450, 120.1550], zoom: 13 },
+  "成都": { center: [30.6580, 104.0700], zoom: 13 }
+};
+
 const LS_REST = "shmap.custom.v1";
 const LS_REV  = "shmap.reviews.v1";
 
@@ -532,6 +589,7 @@ let userRevs   = loadJSON(LS_REV, {});
    2. 状态与工具
    ========================================================= */
 const state = {
+  city: "上海",
   cuisines: new Set(),
   price: "all",
   minRate: 0,
@@ -610,6 +668,7 @@ function toMap(lat, lng){
 function visible(){
   const q = state.q.trim().toLowerCase();
   let arr = allRest().filter(r => {
+    if(r.city !== state.city) return false;
     if(state.cuisines.size && !state.cuisines.has(r.cuisine)) return false;
 
     if(state.price !== "all"){
@@ -647,8 +706,9 @@ function tileURL(){
 }
 
 function initMap(){
+  const v = CITY_VIEW[state.city] || CITY_VIEW["上海"];
   map = L.map("map", { zoomControl: true, attributionControl: true })
-        .setView([31.2260, 121.4700], 13);
+        .setView(toMap(v.center[0], v.center[1]), v.zoom);
 
   tileLayer = L.tileLayer(tileURL(), {
     subdomains: state.basemap === "amap" ? "1234" : "abc",
@@ -921,11 +981,40 @@ function paintStars(n){
 /* =========================================================
    7. 交互绑定
    ========================================================= */
-function bindUI(){
-  // 菜系 chips
+function availableCuisines(){
+  const set = new Set();
+  allRest().forEach(r => { if(r.city === state.city) set.add(r.cuisine); });
+  return CUISINES.filter(c => set.has(c));
+}
+
+function renderCuisineFilters(){
+  const list = availableCuisines();
   $("#cuisineChips").innerHTML =
-    '<button class="chip on" data-cu="__all">全部</button>' +
-    CUISINES.map(c => '<button class="chip" data-cu="' + c + '"><i class="dot" style="background:' + cuColor(c) + '"></i>' + c + '</button>').join("");
+    '<button class="chip' + (state.cuisines.size ? "" : " on") + '" data-cu="__all">全部</button>' +
+    list.map(c =>
+      '<button class="chip' + (state.cuisines.has(c) ? " on" : "") + '" data-cu="' + c +
+      '"><i class="dot" style="background:' + cuColor(c) + '"></i>' + c + "</button>"
+    ).join("");
+
+  const legend = $("#legend");
+  if(legend) legend.innerHTML =
+    list.map(c => '<i><span class="dot" style="background:' + cuColor(c) + '"></span>' + c + "</i>").join("") +
+    '<i style="color:#a89f8f;margin-left:2px">点越大 · 评价越多</i>';
+}
+
+function bindUI(){
+  // 城市切换
+  $("#cityChips").innerHTML = CITIES.map(c =>
+    '<button class="chip' + (c === state.city ? " on" : "") + '" data-city="' + c + '">' + c + "</button>"
+  ).join("");
+
+  $("#cityChips").addEventListener("click", e => {
+    const btn = e.target.closest(".chip");
+    if(btn) switchCity(btn.dataset.city);
+  });
+
+  // 菜系 chips（只列当前城市有的）
+  renderCuisineFilters();
 
   $("#cuisineChips").addEventListener("click", e => {
     const btn = e.target.closest(".chip");
@@ -937,17 +1026,9 @@ function bindUI(){
       if(state.cuisines.has(cu)) state.cuisines.delete(cu);
       else state.cuisines.add(cu);
     }
-    syncChips();
+    renderCuisineFilters();
     refresh();
   });
-
-  function syncChips(){
-    document.querySelectorAll("#cuisineChips .chip").forEach(b => {
-      b.classList.toggle("on", b.dataset.cu === "__all"
-        ? state.cuisines.size === 0
-        : state.cuisines.has(b.dataset.cu));
-    });
-  }
 
   $("#q").addEventListener("input", e => {
     state.q = e.target.value;
@@ -1013,13 +1094,9 @@ function bindUI(){
   $("#bmAmap").addEventListener("click", () => setBasemap("amap"));
   $("#bmOsm").addEventListener("click", () => setBasemap("osm"));
 
-  // 图例
-  $("#legend").innerHTML = CUISINES.map(c =>
-    '<i><span class="dot" style="background:' + cuColor(c) + '"></span>' + c + '</i>'
-  ).join("") + '<i style="color:#a89f8f;margin-left:2px">点越大 · 评价越多</i>';
-
   // 添加餐厅
   $("#fCuisine").innerHTML = CUISINES.map(c => '<option>' + c + '</option>').join("");
+  $("#fCity").innerHTML = CITIES.map(c => '<option>' + c + '</option>').join("");
   $("#btnAdd").addEventListener("click", e => { e.preventDefault(); openModal(); });
   $("#btnCancel").addEventListener("click", closeModal);
   $("#btnPick").addEventListener("click", startPick);
@@ -1092,6 +1169,31 @@ function closeDetail(){
   drawMarkers(); renderList();
 }
 
+function switchCity(city){
+  if(!CITY_DATA[city]) return;
+  state.city = city;
+  state.selectedId = null;
+  state.cuisines.clear();
+
+  document.querySelectorAll("#cityChips .chip").forEach(b => {
+    b.classList.toggle("on", b.dataset.city === city);
+  });
+  renderCuisineFilters();
+
+  $("#brandSeal").textContent = CITY_ABBR[city] || city.slice(0, 1);
+  $("#brandTitle").textContent = city + "美食地图";
+  document.title = city + "美食地图";
+
+  $("#detail").classList.remove("open");
+  try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+
+  const v = CITY_VIEW[city];
+  if(map && v) map.setView(toMap(v.center[0], v.center[1]), v.zoom);
+
+  renderList();
+  drawMarkers();
+}
+
 /* =========================================================
    8. 新增餐厅
    ========================================================= */
@@ -1099,6 +1201,7 @@ function openModal(){
   state.newLat = null; state.newLng = null;
   $("#fName").value = ""; $("#fAddr").value = "";
   $("#fPrice").value = ""; $("#fRate").value = "";
+  $("#fCity").value = state.city;
   $("#fCoord").textContent = "未选择";
   if(pickMarker && map){ map.removeLayer(pickMarker); pickMarker = null; }
   $("#modal").classList.add("open");
@@ -1125,6 +1228,7 @@ function saveRestaurant(){
   const name = $("#fName").value.trim();
   const price = Number($("#fPrice").value);
   const cuisine = $("#fCuisine").value;
+  const city = $("#fCity").value;
 
   if(!name){ $("#fName").style.borderColor = "#c8452a"; $("#fName").focus(); return; }
   if(!(price >= 0) || $("#fPrice").value === ""){ $("#fPrice").style.borderColor = "#c8452a"; $("#fPrice").focus(); return; }
@@ -1141,6 +1245,7 @@ function saveRestaurant(){
   const r = {
     id: "c" + Date.now(),
     name: name.slice(0, 30),
+    city: city,
     cuisine: cuisine,
     price: Math.round(price),
     rating: rate,
@@ -1155,6 +1260,7 @@ function saveRestaurant(){
   customRest.push(r);
   saveJSON(LS_REST, customRest);
   closeModal();
+  if(city !== state.city) switchCity(city);
   refresh();
   openDetail(r.id);
   toast("已添加「" + r.name + "」");
@@ -1187,6 +1293,7 @@ function toast(msg){
    10. 启动
    ========================================================= */
 function refresh(){
+  renderCuisineFilters();
   renderList();
   drawMarkers();
 }
@@ -1195,9 +1302,15 @@ function boot(){
   bindUI();
   initMap();
   refresh();
-  // 支持 #id=d15 这种直达链接
+  // 支持 #id=d15 这种直达链接（跨城市也能打开）
   const m = /^#id=([\w-]+)$/.exec(location.hash || "");
-  if(m && findRest(m[1])) setTimeout(() => openDetail(m[1]), 120);
+  if(m){
+    const r = findRest(m[1]);
+    if(r){
+      if(r.city !== state.city) switchCity(r.city);
+      setTimeout(() => openDetail(r.id), 120);
+    }
+  }
 }
 
 /* Leaflet：多 CDN 兜底加载 */
