@@ -74,6 +74,8 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 .chip:hover{border-color:#cfc4ae}
 .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .chip .dot{width:7px;height:7px;border-radius:50%;flex:none}
+#cityChips{gap:5px}
+#cityChips .chip{padding:4px 9px;font-size:12px}
 select.mini{
   height:31px;border:1px solid var(--line);border-radius:8px;background:#fff;
   padding:0 8px;font-size:12.5px;color:var(--ink2);outline:none;flex:1;min-width:0;
@@ -258,6 +260,12 @@ select.mini{
 .coordbox b{font-variant-numeric:tabular-nums;color:var(--ink)}
 .mactions{display:flex;gap:9px;margin-top:18px}
 .mactions .btn{flex:1}
+
+.linkbtn{
+  margin-top:12px;border:1px solid var(--line);background:#fff;border-radius:9px;
+  padding:7px 16px;font-size:13px;color:var(--accent);font-weight:600;
+}
+.linkbtn:hover{background:#fdf3ea;border-color:#f0d3bb}
 
 /* ---------------- 聚簇 ---------------- */
 .clwrap{background:none;border:none}
@@ -558,15 +566,24 @@ const DEMO_CD = [
   {id:"c08",name:"陈麻婆豆腐",cuisine:"川菜",price:70,rating:4.4,count:2600,addr:"青羊区西玉龙街",lat:30.6680,lng:104.0700,tags:["麻婆豆腐","老字号"],reviews:[{user:"豆腐控",stars:5,text:"麻婆豆腐麻辣鲜香，配饭能吃两碗。",ts:"2025-09-29"}]}
 ];
 
-const CITY_DATA = { "上海": DEMO_SH, "北京": DEMO_BJ, "杭州": DEMO_HZ, "成都": DEMO_CD };
+const CITY_DATA = {
+  "上海": DEMO_SH,
+  "北京": DEMO_BJ,
+  "广州": [],          // 待补充
+  "深圳": [],          // 待补充
+  "杭州": DEMO_HZ,
+  "成都": DEMO_CD
+};
 Object.keys(CITY_DATA).forEach(c => CITY_DATA[c].forEach(r => { r.city = c; }));
 const DEMO = [].concat(DEMO_SH, DEMO_BJ, DEMO_HZ, DEMO_CD);
 
-const CITIES = Object.keys(CITY_DATA);
-const CITY_ABBR = { "上海": "沪", "北京": "京", "杭州": "杭", "成都": "蓉" };
+const CITIES = ["上海", "北京", "广州", "深圳", "杭州", "成都"];
+const CITY_ABBR = { "上海": "沪", "北京": "京", "广州": "穗", "深圳": "深", "杭州": "杭", "成都": "蓉" };
 const CITY_VIEW = {
   "上海": { center: [31.2260, 121.4700], zoom: 13 },
   "北京": { center: [39.9200, 116.4150], zoom: 12 },
+  "广州": { center: [23.1290, 113.2640], zoom: 13 },
+  "深圳": { center: [22.5430, 114.0580], zoom: 13 },
   "杭州": { center: [30.2450, 120.1550], zoom: 13 },
   "成都": { center: [30.6580, 104.0700], zoom: 13 }
 };
@@ -866,12 +883,19 @@ function setBasemap(bm){
    ========================================================= */
 function renderList(){
   const list = visible();
+  const total = allRest().filter(r => r.city === state.city).length;
   $("#count").textContent = list.length;
   const pill = $("#mpill");
   if(pill) pill.textContent = list.length + " 家";
+  const hint = $("#expHint");
+  if(hint) hint.textContent = total ? "点地图上的点看详情" : "这座城市还没收录";
 
   if(!list.length){
-    $("#list").innerHTML = '<div class="empty">没有符合条件的餐厅<br>试着放宽人均或评分</div>';
+    $("#list").innerHTML = total === 0
+      ? '<div class="empty">' + esc(state.city) + '还没有收录餐厅<br>' +
+        '<span style="font-size:12px;opacity:.75">先做第一个添加的人</span><br>' +
+        '<button class="linkbtn" data-act="add">＋ 添加一家 ' + esc(state.city) + ' 的餐厅</button></div>'
+      : '<div class="empty">没有符合条件的餐厅<br>试着放宽人均或评分</div>';
     return;
   }
 
@@ -1049,6 +1073,7 @@ function bindUI(){
   });
 
   $("#list").addEventListener("click", e => {
+    if(e.target.closest('[data-act="add"]')){ openModal(); return; }
     const card = e.target.closest(".card");
     if(card) openDetail(card.dataset.id);
   });
