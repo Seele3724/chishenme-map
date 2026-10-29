@@ -439,7 +439,7 @@ select.mini{
     <p class="hint">原型阶段先填基本信息。上线时这里可以改成先搜高德 POI 自动带出地址和坐标。</p>
     <div class="mrow">
       <label>餐厅名称 <i>*</i></label>
-      <input id="fName" type="text" placeholder="例如：阿娘面">
+      <input id="fName" type="text" placeholder="例如：某某小馆">
     </div>
     <div class="grid2">
       <div class="mrow">
@@ -457,7 +457,7 @@ select.mini{
     </div>
     <div class="mrow">
       <label>地址</label>
-      <input id="fAddr" type="text" placeholder="黄浦区思南路36号">
+      <input id="fAddr" type="text" placeholder="某区某路 1 号">
     </div>
     <div class="mrow">
       <label>你的评分（可选，0–5）</label>
@@ -496,15 +496,15 @@ const CU_COLOR = {
 
    {
      id: "s01",                              // 唯一即可
-     name: "老吉士酒家",
+     name: "店名",
      cuisine: "本帮菜",                        // 必须是 CUISINES 里的一项
-     price: 180,                             // 人均，整数
-     rating: 4.6,                            // 0-5，没有就写 0
-     count: 1284,                            // 已有评价条数，没有就写 0
-     addr: "徐汇区天平路41号",
-     lat: 31.2015, lng: 121.4403,            // 坐标（WGS84）
-     tags: ["红烧肉"],
-     reviews: [{ user: "阿汤", stars: 5, text: "……", ts: "2025-11-02" }]
+     price: 100,                             // 人均，整数
+     rating: 0,                              // 0-5，没有就写 0
+     count: 0,                               // 已有评价条数，没有就写 0
+     addr: "某区某路 1 号",
+     lat: 31.2300, lng: 121.4700,            // 坐标（WGS84）
+     tags: ["招牌菜"],
+     reviews: [{ user: "某某", stars: 5, text: "……", ts: "2025-01-01" }]
    }
 
    城市不用写，会按所属数组自动挂上。
