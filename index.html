@@ -491,8 +491,8 @@ select.mini{
   <div id="mapwrap">
     <div id="map"></div>
     <div class="mapbtn">
-      <button id="bmAmap" class="on">高德底图</button>
-      <button id="bmOsm">OSM</button>
+      <button id="bmAmap" class="on">标准</button>
+      <button id="bmOsm">简约</button>
     </div>
     <div class="legend" id="legend"></div>
     <div id="pickbar">点击地图选择位置 · 按 <b>Esc</b> 取消</div>
@@ -723,13 +723,6 @@ function wgs2gcj(lng, lat){
   dLng = (dLng * 180) / (a / sq * Math.cos(radLat) * PI);
   return [lng + dLng, lat + dLat];
 }
-function toMap(lat, lng){
-  if(state.basemap === "amap"){
-    const g = wgs2gcj(lng, lat);
-    return [g[1], g[0]];
-  }
-  return [lat, lng];
-}
 
 /* 两点间球面距离，返回公里 */
 function haversine(lat1, lng1, lat2, lng2){
@@ -783,50 +776,51 @@ function visible(){
 }
 
 /* =========================================================
-   4. 地图
+   4. 地图（高德 JSAPI 2.0，矢量渲染）
    ========================================================= */
-let map = null, markers = null, tileLayer = null, pickMarker = null;
+let map = null, markers = [], pickMarker = null, hoverWin = null;
 
-function tileURL(){
-  return state.basemap === "amap"
-    ? "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
-    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+/* 站内数据是 WGS-84，高德要 GCJ-02，返回 [lng, lat] */
+function amapPos(lat, lng){
+  const g = wgs2gcj(lng, lat);
+  return [g[0], g[1]];
+}
+
+function currentMapStyle(){
+  return state.basemap === "osm" ? "amap://styles/whitesmoke" : "amap://styles/normal";
 }
 
 function initMap(){
   const v = CITY_VIEW[state.city] || CITY_VIEW["上海"];
-  map = L.map("map", { zoomControl: true, attributionControl: true })
-        .setView(toMap(v.center[0], v.center[1]), v.zoom);
-
-  tileLayer = L.tileLayer(tileURL(), {
-    subdomains: state.basemap === "amap" ? "1234" : "abc",
-    maxZoom: 19,
-    attribution: state.basemap === "amap"
-      ? '&copy; 高德地图'
-      : '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-
-  tileLayer.on("tileerror", function(){
-    if(!window.__tileWarned){
-      window.__tileWarned = true;
-      console.warn("底图瓦片加载失败，可切换到 OSM 看看");
-    }
+  map = new AMap.Map("map", {
+    zoom: v.zoom,
+    center: amapPos(v.center[0], v.center[1]),
+    viewMode: "2D",
+    resizeEnable: true,
+    mapStyle: currentMapStyle()
   });
 
-  markers = L.layerGroup().addTo(map);
   map.on("zoomend", drawMarkers);
+
+  // 高德默认不带缩放按钮，按需加载 ToolBar
+  AMap.plugin(["AMap.ToolBar"], function(){
+    map.addControl(new AMap.ToolBar({ liteStyle: true, position: { top: "16px", left: "16px" } }));
+  });
 
   map.on("click", function(e){
     if(!state.pickMode) return;
-    const ll = e.latlng;
-    let lat = ll.lat, lng = ll.lng;
-    if(state.basemap === "amap"){
-      const g = gcj2wgs(lng, lat);
-      lng = g[0]; lat = g[1];
-    }
+    const glng = e.lnglat.getLng(), glat = e.lnglat.getLat();
+    const g = gcj2wgs(glng, glat);
+    const lng = g[0], lat = g[1];
+
     state.newLat = lat; state.newLng = lng;
-    if(pickMarker) map.removeLayer(pickMarker);
-    pickMarker = L.circleMarker(ll, { radius: 9, color: "#c8452a", weight: 3, fillColor: "#c8452a", fillOpacity: .5 }).addTo(map);
+    if(pickMarker){ map.remove(pickMarker); pickMarker = null; }
+    pickMarker = new AMap.CircleMarker({
+      center: [glng, glat], radius: 9, strokeColor: "#c8452a", strokeWeight: 3,
+      fillColor: "#c8452a", fillOpacity: .5, zIndex: 200
+    });
+    map.add(pickMarker);
+
     $("#fCoord").textContent = lat.toFixed(5) + ", " + lng.toFixed(5);
     setPicked({ ok: true, addr: "（手动在地图上选的点）", lat: lat, lng: lng });
     endPick();
@@ -834,7 +828,6 @@ function initMap(){
   });
 
   drawMarkers();
-  setTimeout(() => map.invalidateSize(), 60);
 }
 
 /* GCJ02 -> WGS84（反解，一次迭代够用） */
@@ -843,34 +836,41 @@ function gcj2wgs(lng, lat){
   return [lng * 2 - g[0], lat * 2 - g[1]];
 }
 
+function clearMarkers(){
+  if(map && markers.length) map.remove(markers);
+  markers = [];
+}
+
 function drawMarkers(){
-  if(!markers || !map) return;
-  markers.clearLayers();
+  if(!map) return;
+  clearMarkers();
 
   const list = visible().filter(r => r.lat != null && r.lng != null);
   const z = map.getZoom();
 
   // 放大到足够级别就直接铺点，否则按屏幕网格聚簇
   if(z >= 15){
-    list.forEach(r => markers.addLayer(singleMarker(r)));
+    markers = list.map(singleMarker);
+    map.add(markers);
     return;
   }
 
   const GRID = 62;
   const groups = new Map();
   list.forEach(r => {
-    const p = map.project(toMap(r.lat, r.lng), z);
+    const p = map.lngLatToContainer(amapPos(r.lat, r.lng));
+    if(!p) return;
     const k = Math.floor(p.x / GRID) + ":" + Math.floor(p.y / GRID);
     if(!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   });
 
   groups.forEach(g => {
-    if(g.length === 1){ markers.addLayer(singleMarker(g[0])); return; }
+    if(g.length === 1){ markers.push(singleMarker(g[0])); return; }
 
-    let sx = 0, sy = 0;
-    g.forEach(r => { const p = map.project(toMap(r.lat, r.lng), z); sx += p.x; sy += p.y; });
-    const center = map.unproject(L.point(sx / g.length, sy / g.length), z);
+    let slng = 0, slat = 0;
+    g.forEach(r => { const p = amapPos(r.lat, r.lng); slng += p[0]; slat += p[1]; });
+    const center = [slng / g.length, slat / g.length];
 
     // 这一片里占比最多的菜系，用来给圆环上色
     const tally = {};
@@ -878,85 +878,77 @@ function drawMarkers(){
     const topCu = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
 
     const size = Math.round(34 + Math.min(26, Math.sqrt(g.length) * 5.5));
-    const icon = L.divIcon({
-      html: '<div class="cl" style="--c:' + cuColor(topCu) + ';width:' + size + 'px;height:' + size +
-            'px;font-size:' + (g.length > 9 ? 13 : 14.5) + 'px">' + g.length + "</div>",
-      className: "clwrap",
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2]
+    const m = new AMap.Marker({
+      position: center,
+      content: '<div class="cl" style="--c:' + cuColor(topCu) + ';width:' + size + 'px;height:' + size +
+               'px;font-size:' + (g.length > 9 ? 13 : 14.5) + 'px">' + g.length + "</div>",
+      offset: new AMap.Pixel(-size / 2, -size / 2),
+      zIndex: 120,
+      cursor: "pointer"
     });
-
-    const m = L.marker(center, { icon: icon, keyboard: false, riseOnHover: true });
-    m.bindTooltip("这一片有 <b>" + g.length + "</b> 家 · 点一下放大",
-      { direction: "top", offset: [0, -size / 2], className: "mtip" });
-    m.on("click", function(ev){
-      L.DomEvent.stopPropagation(ev);
-      map.setView(center, Math.min(z + 2, 17));
+    m.on("click", function(){
+      map.setZoomAndCenter(Math.min(z + 2, 17), center);
     });
-    markers.addLayer(m);
+    markers.push(m);
   });
+  map.add(markers);
 }
 
 function singleMarker(r){
   const s = statsFor(r);
   const base = 6 + Math.min(7, Math.sqrt(s.count || 0) / 5);
+  const pos = amapPos(r.lat, r.lng);
 
-  const m = L.circleMarker(toMap(r.lat, r.lng), {
+  const m = new AMap.CircleMarker({
+    center: pos,
     radius: base,
+    strokeColor: "#fff",
+    strokeWeight: 2,
     fillColor: cuColor(r.cuisine),
-    color: "#fff",
-    weight: 2,
-    opacity: 1,
-    fillOpacity: .92
+    fillOpacity: .92,
+    zIndex: state.selectedId === r.id ? 110 : 100,
+    cursor: "pointer",
+    bubble: true
   });
 
-  m.bindTooltip(
-    "<b>" + esc(r.name) + "</b><br><span style=\"opacity:.65\">" + esc(r.cuisine) +
-    " · ¥" + r.price + "/人 · " + (s.rating ? s.rating.toFixed(1) + "分" : "暂无评分") + "</span>",
-    { direction: "top", offset: [0, -4], className: "mtip" }
-  );
+  m.on("click", function(){ openDetail(r.id); });
+  m.on("mouseover", function(){ showTip(r, pos); });
+  m.on("mouseout", function(){ hideTip(); });
 
-  m.on("click", function(ev){ L.DomEvent.stopPropagation(ev); openDetail(r.id); });
-  m.on("mouseover", function(){ m.setStyle({ weight: 3, radius: base + 2 }); });
-  m.on("mouseout", function(){
-    if(state.selectedId !== r.id) m.setStyle({ weight: 2, radius: base });
-  });
-
-  if(state.selectedId === r.id){
-    m.setStyle({ weight: 4, color: "#1d1c1a", radius: base + 2 });
-    m.bringToFront();
-  }
   return m;
 }
+
+function showTip(r, pos){
+  if(!map) return;
+  const s = statsFor(r);
+  if(!hoverWin){
+    hoverWin = new AMap.InfoWindow({ isCustom: true, offset: new AMap.Pixel(0, -4) });
+  }
+  hoverWin.setContent(
+    '<div class="mtip2"><b>' + esc(r.name) + "</b><br>" +
+    '<span>' + esc(r.cuisine) + " · ¥" + r.price + "/人 · " +
+    (s.rating ? s.rating.toFixed(1) + "分" : "暂无评分") + "</span></div>"
+  );
+  hoverWin.open(map, pos);
+}
+function hideTip(){ if(hoverWin) hoverWin.close(); }
 
 function setBasemap(bm){
   if(state.basemap === bm) return;
   state.basemap = bm;
   $("#bmAmap").classList.toggle("on", bm === "amap");
   $("#bmOsm").classList.toggle("on", bm === "osm");
-  if(map){
-    map.removeLayer(tileLayer);
-    tileLayer = L.tileLayer(tileURL(), {
-      subdomains: bm === "amap" ? "1234" : "abc",
-      maxZoom: 19,
-      attribution: bm === "amap" ? '&copy; 高德地图' : '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-    tileLayer.bringToBack();
-    drawMarkers();
-    drawDestCircle();
-    if(state.selectedId){
-      const r = findRest(state.selectedId);
-      if(r) map.setView(toMap(r.lat, r.lng), map.getZoom());
-    }
-  }
+  if(map) map.setMapStyle(currentMapStyle());
 }
 
 /* =========================================================
    4b. 目的地搜索（地理编码 + 半径筛选）
    ========================================================= */
 
-/* 填了高德 Web 服务 key 就走高德（国内更准、额度高），留空则走 Nominatim */
-const AMAP_KEY = "";
+/* 高德 key：Web服务 用于 POI/地理编码，Web端 用于地图 JSAPI */
+const AMAP_KEY = "b776cd78eaf154a9334b726f21798a4b";            // Web服务
+const AMAP_JS_KEY = "1fc2885826c49b3c1c86845a118f5ed8";          // Web端(JS API)
+const AMAP_SECURITY = "a91da0350203a02657511acd68b549fc";        // 安全密钥
 
 let jsonpSeq = 0;
 function jsonp(url, cbParam){
@@ -1097,18 +1089,22 @@ function nearestSupportedCity(lat, lng){
 let destCircle = null;
 function drawDestCircle(){
   if(!map) return;
-  if(destCircle){ map.removeLayer(destCircle); destCircle = null; }
+  if(destCircle){ map.remove(destCircle); destCircle = null; }
   if(!state.dest) return;
-  destCircle = L.circle(toMap(state.dest.lat, state.dest.lng), {
+  destCircle = new AMap.Circle({
+    center: amapPos(state.dest.lat, state.dest.lng),
     radius: state.dest.radius,
-    color: "#c8452a",
-    weight: 2,
-    opacity: .85,
+    strokeColor: "#c8452a",
+    strokeWeight: 2,
+    strokeOpacity: .85,
     fillColor: "#c8452a",
     fillOpacity: .05,
-    dashArray: "7 7",
-    interactive: false
-  }).addTo(map);
+    strokeStyle: "dashed",
+    strokeDasharray: [7, 7],
+    bubble: false,
+    zIndex: 60
+  });
+  map.add(destCircle);
 }
 
 function renderDestBar(){
@@ -1135,10 +1131,9 @@ function applyDestination(place){
   renderDestBar();
   refresh();
 
-  if(map){
-    // toBounds(n) 是以中心为界各 n/2 米，所以要把直径传进去才是圆的外接框
-    const b = L.latLng(toMap(state.dest.lat, state.dest.lng)).toBounds(state.dest.radius * 2);
-    map.flyToBounds(b, { padding: [26, 26], duration: .6, maxZoom: 15 });
+  if(map && destCircle){
+    // 把圆圈本身塞进视野，四周留点边
+    map.setFitView([destCircle], false, [26, 26, 26, 26], 15);
   }
 }
 
@@ -1150,7 +1145,7 @@ function clearDestination(){
   drawDestCircle();
   renderDestBar();
   const v = CITY_VIEW[state.city];
-  if(map && v) map.setView(toMap(v.center[0], v.center[1]), v.zoom);
+  if(map && v) map.setZoomAndCenter(v.zoom, amapPos(v.center[0], v.center[1]), false);
   refresh();
   toast("已退出目的地筛选");
 }
@@ -1297,12 +1292,10 @@ function openDetail(id){
   $("#detail").classList.add("open");
   try{ history.replaceState(null, "", "#id=" + id); }catch(e){}
   drawMarkers();
-  // 详情栏会盖住地图右侧，所以定位时把目标点往左挪半个栏宽
+  // 详情栏在右侧 452px，地图内容区居中后目标点仍落在可见带内，所以直接居中即可
   if(map){
     const z = Math.max(map.getZoom(), 15);
-    const p = map.project(L.latLng(toMap(r.lat, r.lng)), z);
-    if(window.innerWidth > 900) p.x += 226;
-    map.flyTo(map.unproject(p, z), z, { duration: .55 });
+    map.setZoomAndCenter(z, amapPos(r.lat, r.lng), true);
   }
   renderList();
 }
@@ -1647,7 +1640,7 @@ function bindUI(){
     }
   });
 
-  window.addEventListener("resize", () => { if(map) map.invalidateSize(); });
+  window.addEventListener("resize", () => { if(map) map.resize(); });
 }
 
 function openDetailStatsOnly(r){
@@ -1691,7 +1684,7 @@ function switchCity(city){
   try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
 
   const v = CITY_VIEW[city];
-  if(map && v) map.setView(toMap(v.center[0], v.center[1]), v.zoom);
+  if(map && v) map.setZoomAndCenter(v.zoom, amapPos(v.center[0], v.center[1]), false);
 
   renderList();
   drawMarkers();
@@ -1709,7 +1702,7 @@ function openModal(){
   $("#fSug").classList.remove("on");
   $("#fSug").innerHTML = "";
   setPicked(null);
-  if(pickMarker && map){ map.removeLayer(pickMarker); pickMarker = null; }
+  if(pickMarker && map){ map.remove(pickMarker); pickMarker = null; }
   $("#modal").classList.add("open");
   setTimeout(() => $("#fName").focus(), 80);
 }
@@ -1749,10 +1742,14 @@ function applySuggestion(item){
   $("#fSug").innerHTML = "";
 
   if(map){
-    if(pickMarker){ map.removeLayer(pickMarker); pickMarker = null; }
-    pickMarker = L.circleMarker(toMap(item.lat, item.lng),
-      { radius: 8, color: "#c8452a", weight: 3, fillColor: "#c8452a", fillOpacity: .45 }).addTo(map);
-    map.setView(toMap(item.lat, item.lng), 16, { animate: false });
+    if(pickMarker){ map.remove(pickMarker); pickMarker = null; }
+    const pos = amapPos(item.lat, item.lng);
+    pickMarker = new AMap.CircleMarker({
+      center: pos, radius: 8, strokeColor: "#c8452a", strokeWeight: 3,
+      fillColor: "#c8452a", fillOpacity: .45, zIndex: 200
+    });
+    map.add(pickMarker);
+    map.setZoomAndCenter(16, pos, true);
   }
 }
 
@@ -1807,12 +1804,12 @@ function startPick(){
   state.pickMode = true;
   $("#modal").classList.add("hiding");
   $("#pickbar").classList.add("on");
-  if(map) map.getContainer().style.cursor = "crosshair";
+  if(map) map.setDefaultCursor("crosshair");
 }
 function endPick(){
   state.pickMode = false;
   $("#pickbar").classList.remove("on");
-  if(map) map.getContainer().style.cursor = "";
+  if(map) map.setDefaultCursor("default");
 }
 
 async function saveRestaurant(){
@@ -1926,62 +1923,42 @@ function boot(){
   }
 }
 
-/* Leaflet：多 CDN 兜底加载 */
+/* 高德 JSAPI 2.0：矢量渲染，任意 DPI 都清晰 */
 (function(){
-  const cssList = [
-    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css",
-    "https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.css",
-    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  ];
-  cssList.forEach(h => {
-    const l = document.createElement("link");
-    l.rel = "stylesheet"; l.href = h;
-    document.head.appendChild(l);
-  });
+  if(window.AMap){ boot(); return; }
 
-  if(window.L){ boot(); return; }
+  // 安全密钥必须在主脚本加载之前挂到全局
+  window._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY };
 
-  const jsList = [
-    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/leaflet.js",
-    "https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.js",
-    "https://unpkg.com/leaflet@1.9.4/leaflet.js"
-  ];
-  let i = 0;
-  (function tryLoad(){
-    if(i >= jsList.length){
-      // 全部失败：降级为纯列表模式
-      bindUI();
-      refresh();
-      const el = document.createElement("div");
-      el.style.cssText = "position:absolute;inset:0;display:grid;place-items:center;padding:40px;text-align:center;" +
-        "color:#938d82;font-size:14px;line-height:1.9;background:#f2ece1;z-index:2";
-      el.innerHTML = "地图库加载失败（网络问题）<br>左侧筛选和列表、评价功能仍然可用。<br><br>" +
-        '<span style="font-size:12px;opacity:.7">请检查网络后刷新，或把页面放到有网的浏览器打开</span>';
-      $("#mapwrap").appendChild(el);
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = jsList[i++];
-    s.onload = function(){ boot(); };
-    s.onerror = tryLoad;
-    document.head.appendChild(s);
-  })();
+  const s = document.createElement("script");
+  s.src = "https://webapi.amap.com/maps?v=2.0&key=" + AMAP_JS_KEY;
+  s.onload = function(){ boot(); };
+  s.onerror = function(){
+    // 加载失败：降级成纯列表模式，筛选和评价仍可用
+    bindUI();
+    refresh();
+    const el = document.createElement("div");
+    el.style.cssText = "position:absolute;inset:0;display:grid;place-items:center;padding:40px;text-align:center;" +
+      "color:#938d82;font-size:14px;line-height:1.9;background:#f2ece1;z-index:2";
+    el.innerHTML = "地图加载失败（网络问题）<br>左侧筛选和列表、评价功能仍然可用。<br><br>" +
+      '<span style="font-size:12px;opacity:.7">请检查网络后刷新</span>';
+    document.getElementById("mapwrap").appendChild(el);
+  };
+  document.head.appendChild(s);
 })();
 </script>
 
 <style>
-/* Leaflet 样式微调（放在库加载后也生效） */
-.leaflet-container{font-family:inherit;background:#e9e4d8}
-.leaflet-tooltip.mtip{
-  background:rgba(29,28,26,.94);color:#fff;border:none;border-radius:8px;
-  padding:6px 9px;font-size:12px;line-height:1.5;box-shadow:0 6px 18px rgba(0,0,0,.28);
+/* 高德地图容器与悬浮提示 */
+.amap-container{font-family:inherit}
+.mtip2{
+  background:rgba(29,28,26,.94);color:#fff;border-radius:8px;
+  padding:6px 9px;font-size:12px;line-height:1.5;
+  box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap;max-width:220px;
 }
-.leaflet-tooltip.mtip::before{border-top-color:rgba(29,28,26,.94)}
-.leaflet-control-zoom a{
-  color:#5b5750!important;border-radius:7px!important;
-}
-.leaflet-bar{border:none!important;box-shadow:0 4px 14px rgba(60,45,20,.15)!important}
-.leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.7)!important}
+.mtip2 b{font-weight:600}
+.mtip2 span{opacity:.7}
+.amap-logo,.amap-copyright{opacity:.6}
 </style>
 </body>
 </html>
