@@ -644,8 +644,8 @@ const CITY_VIEW = {
    配了 Supabase 就走云端（所有人共享），没配就退回本机 localStorage。
    两种模式对上层暴露同一组接口，业务代码不用关心后端是谁。
    ========================================================= */
-const SUPABASE_URL  = "";   // 例：https://abcdefghijk.supabase.co
-const SUPABASE_ANON = "";   // 项目设置里的 anon public key
+const SUPABASE_URL  = "https://vovzusarziwiimbkazqk.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdnp1c2Fyeml3aWltYmthenFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNjUwMTQsImV4cCI6MjEwODk0MTAxNH0.Sd8Wdxk9DJegwjrivg-30hLx2skuvNsFmNa0Fnf6K9Y";
 
 const LS_REST = "shmap.custom.v1";
 const LS_REV  = "shmap.reviews.v1";
@@ -681,7 +681,19 @@ async function sbRequest(path, opts){
     "Content-Type": "application/json"
   };
   Object.assign(headers, (opts && opts.headers) || {});
-  const res = await fetch(url, Object.assign({}, opts, { headers }));
+
+  // 网络不好时别让整个页面卡死
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  let res;
+  try{
+    res = await fetch(url, Object.assign({}, opts, { headers, signal: ctl.signal }));
+  }catch(e){
+    throw new Error(e.name === "AbortError" ? "请求超时" : "网络不通");
+  }finally{
+    clearTimeout(timer);
+  }
+
   if(!res.ok){
     let msg = "HTTP " + res.status;
     try{ const j = await res.json(); msg = j.message || j.hint || j.details || msg; }catch(e){}
