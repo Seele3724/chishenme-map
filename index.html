@@ -1116,9 +1116,26 @@ async function searchDestination(query){
   if(input) input.blur();
 
   try{
-    const list = await geocode(query);
+    let list = await geocode(query);
     if(!list.length) throw new Error("no-result");
-    const picked = pickPlace(list);
+    let picked = pickPlace(list);
+
+    // 同名地点太多时会飘到别的省市，带上当前城市名再试一次
+    if(picked.km > 80 && query.indexOf(state.city) === -1){
+      try{
+        const again = await geocode(query + " " + state.city);
+        if(again.length){
+          const p2 = pickPlace(again);
+          if(p2.km < picked.km){ list = again; picked = p2; }
+        }
+      }catch(e){ /* 重试失败就沿用第一次的结果 */ }
+    }
+
+    // 还是离所有支持的城市很远，多半是搜错了，别把地图飞过去
+    if(picked.km > 120){
+      throw new Error("no-result");
+    }
+
     // 目的地明显属于别的城市时，顺手把城市切过去
     if(picked.city && picked.km < 80 && picked.city !== state.city){
       state.city = picked.city;
@@ -1134,7 +1151,7 @@ async function searchDestination(query){
     toast("已定位到「" + picked.place.name + "」");
   }catch(err){
     if(err.message === "no-result"){
-      toast("没找到「" + query + "」，换个说法试试");
+      toast("没找到「" + query + "」，试着加上城市名或更具体的地标");
     }else{
       toast("地点搜索失败，检查网络后重试");
     }
