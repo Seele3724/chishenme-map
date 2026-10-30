@@ -275,6 +275,28 @@ select.mini{
   padding:0 10px;background:#fff;outline:none;
 }
 .mrow input:focus,.mrow select:focus{border-color:#cbbfa8;box-shadow:0 0 0 3px rgba(200,69,42,.07)}
+
+.combo{position:relative}
+.sug{
+  display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 12px 30px rgba(60,45,20,.18);max-height:224px;overflow-y:auto;
+}
+.sug.on{display:block}
+.sug .item{padding:8px 11px;cursor:pointer;border-bottom:1px solid #f5f0e5}
+.sug .item:last-child{border-bottom:none}
+.sug .item:hover,.sug .item:active{background:#fdf3ea}
+.sug .nm{font-size:13px;font-weight:600;line-height:1.35}
+.sug .ad{
+  font-size:11.5px;color:var(--ink3);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.sug .hint{padding:11px;font-size:12px;color:var(--ink3);text-align:center}
+.picked{
+  display:none;margin-top:6px;font-size:11.5px;line-height:1.5;color:#1c7a5a;
+}
+.picked.on{display:block}
+.picked.warn{color:var(--accent)}
 .coordbox{
   display:flex;gap:8px;align-items:center;background:#f7f2e7;border:1px dashed #ddd2bd;
   border-radius:9px;padding:9px 11px;font-size:12px;color:var(--ink2);
@@ -467,10 +489,14 @@ select.mini{
 <div class="modal" id="modal">
   <div class="mcard">
     <h3>添加一家餐厅</h3>
-    <p class="hint">原型阶段先填基本信息。上线时这里可以改成先搜高德 POI 自动带出地址和坐标。</p>
+    <p class="hint">输入店名，下面会给出候选，点一条就自动填好地址和坐标。</p>
     <div class="mrow">
       <label>餐厅名称 <i>*</i></label>
-      <input id="fName" type="text" placeholder="例如：某某小馆">
+      <div class="combo">
+        <input id="fName" type="text" placeholder="输入店名，自动定位" autocomplete="off">
+        <div class="sug" id="fSug"></div>
+      </div>
+      <div class="picked" id="fPicked"></div>
     </div>
     <div class="grid2">
       <div class="mrow">
@@ -499,7 +525,7 @@ select.mini{
       <div class="coordbox">
         <span>坐标：<b id="fCoord">未选择</b></span>
         <span style="flex:1"></span>
-        <button class="btn ghost sm" id="btnPick">在地图上选点</button>
+        <button class="btn ghost sm" id="btnPick">在地图上调整</button>
       </div>
     </div>
     <div class="mactions">
@@ -756,6 +782,7 @@ function initMap(){
     if(pickMarker) map.removeLayer(pickMarker);
     pickMarker = L.circleMarker(ll, { radius: 9, color: "#c8452a", weight: 3, fillColor: "#c8452a", fillOpacity: .5 }).addTo(map);
     $("#fCoord").textContent = lat.toFixed(5) + ", " + lng.toFixed(5);
+    setPicked({ ok: true, addr: "（手动在地图上选的点）", lat: lat, lng: lng });
     endPick();
     $("#modal").classList.add("open");
   });
@@ -910,30 +937,91 @@ function jsonp(url, cbParam){
   });
 }
 
-/* 返回 [{ name, lat, lng }] */
-async function geocode(query){
-  if(AMAP_KEY){
-    const u = "https://restapi.amap.com/v3/place/text?keywords=" + encodeURIComponent(query) +
-              "&citylimit=false&offset=6&page=1&extensions=base&key=" + AMAP_KEY;
-    const d = await jsonp(u, "callback");
-    if(d && d.status === "1" && d.pois && d.pois.length){
-      return d.pois.map(p => {
-        const parts = String(p.location).split(",");
-        return { name: p.name, lat: Number(parts[1]), lng: Number(parts[0]) };
-      });
-    }
-    throw new Error("no-result");
-  }
+/* ----------------------------------------------------------
+   地理编码：多源链式回退
+   高德（配了 key 时最准）→ Photon → Nominatim
+   挂掉两次的服务会被熔断，避免每次都白等超时
+   ---------------------------------------------------------- */
+const providerHealth = { amap: 0, photon: 0, nominatim: 0 };
 
+async function geocodeAmap(q){
+  const u = "https://restapi.amap.com/v3/place/text?keywords=" + encodeURIComponent(q) +
+            "&offset=6&page=1&extensions=base&key=" + AMAP_KEY;
+  const d = await jsonp(u, "callback");
+  if(!d || d.status !== "1") throw new Error("amap");
+  return (d.pois || []).map(p => {
+    const parts = String(p.location || "").split(",");
+    const g = gcj2wgs(Number(parts[0]), Number(parts[1]));   // 高德返回 GCJ02，统一转成 WGS84
+    return {
+      name: p.name,
+      addr: (p.pname || "") + (p.cityname || "") + (p.adname || "") + (p.address || ""),
+      lat: g[1], lng: g[0]
+    };
+  });
+}
+
+async function geocodePhoton(q){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6000);
+  try{
+    const r = await fetch("https://photon.komoot.io/api/?limit=6&q=" + encodeURIComponent(q),
+                          { signal: ctl.signal });
+    if(!r.ok) throw new Error("photon-http");
+    const d = await r.json();
+    return (d.features || []).map(f => {
+      const p = f.properties || {};
+      const c = (f.geometry && f.geometry.coordinates) || [];
+      const bits = [p.city, p.district, p.street, p.housenumber].filter(Boolean);
+      return {
+        name: p.name || q,
+        addr: bits.join(" "),
+        lat: Number(c[1]), lng: Number(c[0])
+      };
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function geocodeNominatim(q){
   const u = "https://nominatim.openstreetmap.org/search?format=json&limit=6&accept-language=zh-CN&q=" +
-            encodeURIComponent(query);
+            encodeURIComponent(q);
   const d = await jsonp(u, "json_callback");
-  if(!Array.isArray(d) || !d.length) throw new Error("no-result");
+  if(!Array.isArray(d)) throw new Error("nominatim");
   return d.map(x => ({
-    name: String(x.display_name || "").split(",")[0].trim() || query,
+    name: String(x.display_name || "").split(",")[0].trim() || q,
+    addr: String(x.display_name || "").split(",").slice(1, 4).join("").trim(),
     lat: Number(x.lat),
     lng: Number(x.lon)
   }));
+}
+
+/* 返回 [{ name, addr, lat, lng }]，无结果返回 []；全部服务不可用会抛错 */
+async function geocode(query){
+  const chain = [];
+  if(AMAP_KEY) chain.push(["amap", geocodeAmap]);
+  chain.push(["photon", geocodePhoton]);
+  chain.push(["nominatim", geocodeNominatim]);
+
+  let answered = false, errored = false;
+
+  for(const pair of chain){
+    const name = pair[0], fn = pair[1];
+    if(providerHealth[name] >= 2) continue;      // 熔断
+    try{
+      const list = await fn(query);
+      providerHealth[name] = 0;
+      answered = true;
+      if(list && list.length) return list;
+    }catch(e){
+      providerHealth[name] = (providerHealth[name] || 0) + 1;
+      errored = true;
+    }
+  }
+
+  if(answered) return [];                        // 有服务正常应答，就是真没结果
+  if(errored) throw new Error("network");        // 全都挂了
+  return [];
 }
 
 /* 从多个候选里挑一个：优先离某个已知城市最近的那个 */
@@ -947,6 +1035,17 @@ function pickPlace(list){
     });
   });
   return { place: best, city: bestCity, km: bestKm };
+}
+
+/* 离得最近的已知城市（不足 80 公里才算） */
+function nearestSupportedCity(lat, lng){
+  let best = null, bestKm = Infinity;
+  CITIES.forEach(city => {
+    const v = CITY_VIEW[city];
+    const km = haversine(lat, lng, v.center[0], v.center[1]);
+    if(km < bestKm){ bestKm = km; best = city; }
+  });
+  return bestKm < 80 ? best : null;
 }
 
 let destCircle = null;
@@ -1255,6 +1354,30 @@ function bindUI(){
   });
   $("#destClear").addEventListener("click", clearDestination);
 
+  // 店名输入 → 实时给候选
+  $("#fName").addEventListener("input", e => {
+    const v = e.target.value.trim();
+    state.newLat = null; state.newLng = null;   // 改了名字，之前定位作废
+    setPicked(null);
+    clearTimeout(sugTimer);
+    sugSeq++;                                    // 让在途请求的结果失效
+    if(v.length < 2){ $("#fSug").classList.remove("on"); $("#fSug").innerHTML = ""; return; }
+    sugTimer = setTimeout(() => searchSuggestions(v), 650);
+  });
+
+  $("#fName").addEventListener("keydown", e => {
+    if(e.key === "Escape"){ $("#fSug").classList.remove("on"); return; }
+    if(e.key === "Enter"){
+      e.preventDefault();
+      const box = $("#fSug");
+      if(box.classList.contains("on") && box._list && box._list.length){
+        applySuggestion(box._list[0]);            // 回车直接取第一条
+      }else{
+        box.classList.remove("on");
+      }
+    }
+  });
+
   $("#priceSel").addEventListener("change", e => { state.price = e.target.value; refresh(); });
   $("#rateSel").addEventListener("change", e => { state.minRate = Number(e.target.value); refresh(); });
   $("#sortSel").addEventListener("change", e => { state.sort = e.target.value; refresh(); });
@@ -1426,13 +1549,101 @@ function openModal(){
   $("#fPrice").value = ""; $("#fRate").value = "";
   $("#fCity").value = state.city;
   $("#fCoord").textContent = "未选择";
+  $("#fSug").classList.remove("on");
+  $("#fSug").innerHTML = "";
+  setPicked(null);
   if(pickMarker && map){ map.removeLayer(pickMarker); pickMarker = null; }
   $("#modal").classList.add("open");
   setTimeout(() => $("#fName").focus(), 80);
 }
+
+function setPicked(place){
+  const el = $("#fPicked");
+  if(!el) return;
+  if(!place){
+    el.classList.remove("on");
+    el.classList.remove("warn");
+    el.textContent = "";
+    return;
+  }
+  el.classList.add("on");
+  if(place.ok){
+    el.classList.remove("warn");
+    el.textContent = "✓ 已定位" + (place.addr ? "：" + place.addr : "");
+    $("#fCoord").textContent = place.lat.toFixed(5) + ", " + place.lng.toFixed(5);
+  }else{
+    el.classList.add("warn");
+    el.textContent = place.msg || "";
+  }
+}
+
+/* 选中一条候选：填名称、地址、坐标，并把地图挪过去 */
+function applySuggestion(item){
+  $("#fName").value = item.name;
+  if(item.addr) $("#fAddr").value = item.addr;
+  state.newLat = item.lat;
+  state.newLng = item.lng;
+
+  const city = nearestSupportedCity(item.lat, item.lng);
+  if(city) $("#fCity").value = city;
+
+  setPicked({ ok: true, addr: item.addr, lat: item.lat, lng: item.lng });
+  $("#fSug").classList.remove("on");
+  $("#fSug").innerHTML = "";
+
+  if(map){
+    if(pickMarker){ map.removeLayer(pickMarker); pickMarker = null; }
+    pickMarker = L.circleMarker(toMap(item.lat, item.lng),
+      { radius: 8, color: "#c8452a", weight: 3, fillColor: "#c8452a", fillOpacity: .45 }).addTo(map);
+    map.setView(toMap(item.lat, item.lng), 16, { animate: false });
+  }
+}
+
+let sugTimer = null, sugSeq = 0;
+
+function renderSuggestions(list, query){
+  const box = $("#fSug");
+  if(!list.length){
+    box.innerHTML = '<div class="hint">没搜到「' + esc(query) + '」，试试加上区域名</div>';
+    box.classList.add("on");
+    return;
+  }
+  box.innerHTML = list.slice(0, 6).map((it, i) =>
+    '<div class="item" data-i="' + i + '">' +
+      '<div class="nm">' + esc(it.name) + '</div>' +
+      '<div class="ad">' + esc(it.addr || "（无地址信息）") + '</div>' +
+    '</div>'
+  ).join("");
+  box.classList.add("on");
+  box._list = list;
+  box.onmousedown = e => {
+    const el = e.target.closest(".item");
+    if(!el) return;
+    e.preventDefault();
+    const item = list[Number(el.dataset.i)];
+    if(item) applySuggestion(item);
+  };
+}
+
+async function searchSuggestions(query){
+  const seq = ++sugSeq;
+  const box = $("#fSug");
+  box.innerHTML = '<div class="hint">搜索中…</div>';
+  box.classList.add("on");
+  try{
+    const list = await geocode(query);
+    if(seq !== sugSeq) return;                 // 有更新的输入，丢弃旧结果
+    renderSuggestions(list, query);
+  }catch(e){
+    if(seq !== sugSeq) return;
+    box.innerHTML = '<div class="hint">搜索服务暂时不可用，可点「在地图上调整」手动定位</div>';
+    box.classList.add("on");
+  }
+}
 function closeModal(){
   $("#modal").classList.remove("open");
   $("#modal").classList.remove("hiding");
+  $("#fSug").classList.remove("on");
   if(state.pickMode) endPick();
 }
 function startPick(){
@@ -1447,7 +1658,7 @@ function endPick(){
   if(map) map.getContainer().style.cursor = "";
 }
 
-function saveRestaurant(){
+async function saveRestaurant(){
   const name = $("#fName").value.trim();
   const price = Number($("#fPrice").value);
   const cuisine = $("#fCuisine").value;
@@ -1458,12 +1669,31 @@ function saveRestaurant(){
 
   const rate = Math.max(0, Math.min(5, Number($("#fRate").value) || 0));
   let lat = state.newLat, lng = state.newLng;
-  if(lat == null){
-    // 没选点：放在地图中心
-    const c = map ? map.getCenter() : { lat: 31.2260, lng: 121.4700 };
-    if(state.basemap === "amap"){ const g = gcj2wgs(c.lng, c.lat); lng = g[0]; lat = g[1]; }
-    else { lat = c.lat; lng = c.lng; }
+  let addr = $("#fAddr").value.trim();
+
+  // 没点过候选，就再按店名自动定位一次
+  if(lat == null && name){
+    const btn = $("#btnSave");
+    btn.disabled = true;
+    setPicked({ ok: false, msg: "正在按店名定位…" });
+    try{
+      const list = await geocode(name);
+      if(list.length){
+        lat = list[0].lat; lng = list[0].lng;
+        if(!addr) addr = list[0].addr || "";
+        if(!$("#fAddr").value.trim()) $("#fAddr").value = addr;
+        const nc = nearestSupportedCity(lat, lng);
+        if(nc) $("#fCity").value = nc;
+      }
+    }catch(e){ /* 网络问题，下面统一提示 */ }
+    btn.disabled = false;
   }
+
+  if(lat == null){
+    setPicked({ ok: false, msg: "没找到这家店的位置，点「在地图上调整」手动选一下" });
+    return;
+  }
+  setPicked({ ok: true, addr: addr, lat: lat, lng: lng });
 
   const r = {
     id: "c" + Date.now(),
@@ -1473,7 +1703,7 @@ function saveRestaurant(){
     price: Math.round(price),
     rating: rate,
     count: rate > 0 ? 1 : 0,
-    addr: $("#fAddr").value.trim().slice(0, 60),
+    addr: addr.slice(0, 60),
     lat: lat, lng: lng,
     tags: ["我添加的"],
     reviews: [],
