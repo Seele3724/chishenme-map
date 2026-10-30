@@ -639,8 +639,17 @@ const CITY_VIEW = {
   "成都": { center: [30.6580, 104.0700], zoom: 13 }
 };
 
+/* =========================================================
+   1b. 持久化层
+   配了 Supabase 就走云端（所有人共享），没配就退回本机 localStorage。
+   两种模式对上层暴露同一组接口，业务代码不用关心后端是谁。
+   ========================================================= */
+const SUPABASE_URL  = "";   // 例：https://abcdefghijk.supabase.co
+const SUPABASE_ANON = "";   // 项目设置里的 anon public key
+
 const LS_REST = "shmap.custom.v1";
 const LS_REV  = "shmap.reviews.v1";
+const DEVICE_KEY = "shmap.device.v1";
 
 function loadJSON(k, fb){
   try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; }
@@ -650,8 +659,166 @@ function saveJSON(k, v){
   try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ console.warn("存储失败", e); }
 }
 
-let customRest = loadJSON(LS_REST, []);
-let userRevs   = loadJSON(LS_REV, {});
+/* 阶段一的轻量身份：一台设备一个 id，没有登录 */
+const MY_DEVICE = (function(){
+  let v = null;
+  try{ v = localStorage.getItem(DEVICE_KEY); }catch(e){}
+  if(!v){
+    v = "d" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    try{ localStorage.setItem(DEVICE_KEY, v); }catch(e){}
+  }
+  return v;
+})();
+
+let customRest = [];
+let userRevs   = {};
+
+async function sbRequest(path, opts){
+  const url = SUPABASE_URL.replace(/\/+$/, "") + "/rest/v1/" + path;
+  const headers = {
+    "apikey": SUPABASE_ANON,
+    "Authorization": "Bearer " + SUPABASE_ANON,
+    "Content-Type": "application/json"
+  };
+  Object.assign(headers, (opts && opts.headers) || {});
+  const res = await fetch(url, Object.assign({}, opts, { headers }));
+  if(!res.ok){
+    let msg = "HTTP " + res.status;
+    try{ const j = await res.json(); msg = j.message || j.hint || j.details || msg; }catch(e){}
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
+  }
+  if(res.status === 204) return null;
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+
+/* 服务端行 → 前端模型 */
+function fromRow(row){
+  return {
+    id: row.id,
+    name: row.name,
+    city: row.city,
+    cuisine: row.cuisine,
+    price: row.price,
+    addr: row.addr || "",
+    lat: row.lat,
+    lng: row.lng,
+    tags: row.tags || [],
+    rating: 0,
+    count: 0,
+    reviews: [],
+    poi_id: row.poi_id || null,
+    device: row.device_id || null,
+    remote: true
+  };
+}
+
+const store = {
+  remote: !!(SUPABASE_URL && SUPABASE_ANON),
+
+  async load(){
+    if(!this.remote){
+      customRest = loadJSON(LS_REST, []);
+      userRevs = loadJSON(LS_REV, {});
+      return "local";
+    }
+    const rows = await sbRequest("restaurants?select=*&status=eq.active&order=created_at.asc");
+    customRest = (rows || []).map(fromRow);
+
+    const revs = await sbRequest("reviews?select=*&status=eq.active&order=created_at.asc");
+    userRevs = {};
+    (revs || []).forEach(v => {
+      (userRevs[v.restaurant_id] = userRevs[v.restaurant_id] || []).push({
+        id: v.id,
+        user: v.nickname || "匿名",
+        stars: v.stars,
+        text: v.body,
+        ts: v.created_at,
+        device: v.device_id
+      });
+    });
+    return "remote";
+  },
+
+  async addRestaurant(r){
+    if(!this.remote){
+      customRest.push(r);
+      saveJSON(LS_REST, customRest);
+      return { item: r };
+    }
+    const payload = {
+      name: r.name, city: r.city, cuisine: r.cuisine, price: r.price,
+      addr: r.addr || null, lat: r.lat, lng: r.lng,
+      tags: r.tags || [], device_id: MY_DEVICE, poi_id: r.poi_id || null
+    };
+    try{
+      const rows = await sbRequest("restaurants", {
+        method: "POST",
+        headers: { "Prefer": "return=representation" },
+        body: JSON.stringify(payload)
+      });
+      const item = fromRow(rows[0]);
+      customRest.push(item);
+      return { item };
+    }catch(e){
+      // 撞到同一个高德 POI：说明这家店已经有人加过了
+      if(e.status === 409 && r.poi_id){
+        const ex = await sbRequest("restaurants?select=*&poi_id=eq." + encodeURIComponent(r.poi_id));
+        if(ex && ex.length){
+          const item = fromRow(ex[0]);
+          if(!customRest.some(x => x.id === item.id)) customRest.push(item);
+          return { item: item, duplicate: true };
+        }
+      }
+      throw e;
+    }
+  },
+
+  async addReview(restaurantId, rev){
+    if(!this.remote){
+      (userRevs[restaurantId] = userRevs[restaurantId] || []).push(rev);
+      saveJSON(LS_REV, userRevs);
+      return rev;
+    }
+    const rows = await sbRequest("reviews", {
+      method: "POST",
+      headers: { "Prefer": "return=representation" },
+      body: JSON.stringify({
+        restaurant_id: restaurantId,
+        device_id: MY_DEVICE,
+        nickname: rev.user,
+        stars: rev.stars,
+        body: rev.text
+      })
+    });
+    const v = rows[0];
+    const item = {
+      id: v.id, user: v.nickname || rev.user, stars: v.stars,
+      text: v.body, ts: v.created_at, device: MY_DEVICE
+    };
+    (userRevs[restaurantId] = userRevs[restaurantId] || []).push(item);
+    return item;
+  },
+
+  async deleteReview(restaurantId, reviewId){
+    if(this.remote){
+      await sbRequest("reviews?id=eq." + encodeURIComponent(reviewId), { method: "DELETE" });
+    }
+    userRevs[restaurantId] = (userRevs[restaurantId] || []).filter(x => x.id !== reviewId);
+    if(!userRevs[restaurantId].length) delete userRevs[restaurantId];
+    if(!this.remote) saveJSON(LS_REV, userRevs);
+  },
+
+  async reset(){
+    if(!this.remote){
+      try{ localStorage.removeItem(LS_REST); localStorage.removeItem(LS_REV); }catch(e){}
+    }
+    customRest = [];
+    userRevs = {};
+  }
+};
 
 /* =========================================================
    2. 状态与工具
@@ -669,6 +836,7 @@ const state = {
   pickMode: false,
   newLat: null,
   newLng: null,
+  newPoiId: null,
   dest: null          // 目的地筛选：{ name, lat, lng, radius }
 };
 
@@ -992,6 +1160,7 @@ async function geocodeAmap(q){
     const g = gcj2wgs(Number(parts[0]), Number(parts[1]));   // 高德返回 GCJ02，统一转成 WGS84
     return {
       name: p.name,
+      poiId: p.id ? String(p.id) : null,
       addr: (p.pname || "") + (p.cityname || "") + (p.adname || "") + (p.address || ""),
       lat: g[1], lng: g[0]
     };
@@ -1306,7 +1475,8 @@ function renderReviews(r){
 
   const listHTML = all.length
     ? all.map(rv => {
-        const mineFlag = mine.some(x => x.id === rv.id);
+        // 云端模式下别人的评价也在本地数组里，用设备 id 判断归属
+        const mineFlag = rv.device ? rv.device === MY_DEVICE : mine.some(x => x.id === rv.id);
         return '<div class="rev">' +
           '<div class="rev-top">' +
             '<div class="avatar">' + esc(String(rv.user || "客").slice(0, 1)) + '</div>' +
@@ -1482,7 +1652,7 @@ function bindUI(){
   // 店名输入 → 实时给候选
   $("#fName").addEventListener("input", e => {
     const v = e.target.value.trim();
-    state.newLat = null; state.newLng = null;   // 改了名字，之前定位作废
+    state.newLat = null; state.newLng = null; state.newPoiId = null;   // 改了名字，之前定位作废
     setPicked(null);
     clearTimeout(sugTimer);
     sugSeq++;                                    // 让在途请求的结果失效
@@ -1549,19 +1719,24 @@ function bindUI(){
   });
 
   // 详情内事件委托
-  $("#dbody").addEventListener("click", e => {
+  $("#dbody").addEventListener("click", async e => {
     const star = e.target.closest("[data-star]");
     if(star){ paintStars(Number(star.dataset.star)); return; }
 
     const del = e.target.closest("[data-del]");
     if(del){
       const id = state.selectedId;
-      userRevs[id] = (userRevs[id] || []).filter(x => x.id !== del.dataset.del);
-      if(!userRevs[id].length) delete userRevs[id];
-      saveJSON(LS_REV, userRevs);
-      const r = findRest(id);
-      if(r){ renderReviews(r); openDetailStatsOnly(r); }
-      drawMarkers(); renderList();
+      del.disabled = true;
+      try{
+        await store.deleteReview(id, del.dataset.del);
+        const r = findRest(id);
+        if(r){ renderReviews(r); openDetailStatsOnly(r); }
+        drawMarkers(); renderList();
+        toast("评价已删除");
+      }catch(err){
+        del.disabled = false;
+        toast("删除失败：" + err.message);
+      }
       return;
     }
 
@@ -1570,16 +1745,21 @@ function bindUI(){
       if(!text){ $("#rvText").focus(); $("#rvText").style.borderColor = "#c8452a"; return; }
       const id = state.selectedId;
       const user = ($("#rvUser").value.trim() || "我").slice(0, 12);
-      userRevs[id] = userRevs[id] || [];
-      userRevs[id].push({
-        id: "u" + Date.now() + Math.random().toString(36).slice(2, 6),
-        user: user, stars: state.tempStars, text: text, ts: Date.now()
-      });
-      saveJSON(LS_REV, userRevs);
-      const r = findRest(id);
-      if(r){ renderReviews(r); openDetailStatsOnly(r); }
-      drawMarkers(); renderList();
-      toast("评价已保存");
+      const btn = $("#btnSubmitRev");
+      btn.disabled = true;
+      try{
+        await store.addReview(id, {
+          id: "u" + Date.now() + Math.random().toString(36).slice(2, 6),
+          user: user, stars: state.tempStars, text: text, ts: Date.now(), device: MY_DEVICE
+        });
+        const r = findRest(id);
+        if(r){ renderReviews(r); openDetailStatsOnly(r); }
+        drawMarkers(); renderList();
+        toast("评价已保存");
+      }catch(err){
+        btn.disabled = false;
+        toast("保存失败：" + err.message);
+      }
     }
   });
 
@@ -1609,12 +1789,14 @@ function bindUI(){
     toast("已导出 JSON");
   });
 
-  $("#btnReset").addEventListener("click", e => {
+  $("#btnReset").addEventListener("click", async e => {
     e.preventDefault();
+    if(store.remote){
+      toast("数据存在云端，本机清空不会影响别人");
+      return;
+    }
     if(!confirm("确定清空本机添加的餐厅和评价？此操作不可撤销。")) return;
-    localStorage.removeItem(LS_REST);
-    localStorage.removeItem(LS_REV);
-    customRest = []; userRevs = {};
+    await store.reset();
     state.selectedId = null;
     closeDetail(); refresh(); toast("本机数据已清空");
   });
@@ -1694,7 +1876,7 @@ function switchCity(city){
    8. 新增餐厅
    ========================================================= */
 function openModal(){
-  state.newLat = null; state.newLng = null;
+  state.newLat = null; state.newLng = null; state.newPoiId = null;
   $("#fName").value = ""; $("#fAddr").value = "";
   $("#fPrice").value = ""; $("#fRate").value = "";
   $("#fCity").value = state.city;
@@ -1733,6 +1915,7 @@ function applySuggestion(item){
   if(item.addr) $("#fAddr").value = item.addr;
   state.newLat = item.lat;
   state.newLng = item.lng;
+  state.newPoiId = item.poiId || null;
 
   const city = nearestSupportedCity(item.lat, item.lng);
   if(city) $("#fCity").value = city;
@@ -1834,6 +2017,7 @@ async function saveRestaurant(){
       const list = await geocode(name);
       if(list.length){
         lat = list[0].lat; lng = list[0].lng;
+        state.newPoiId = list[0].poiId || null;
         if(!addr) addr = list[0].addr || "";
         if(!$("#fAddr").value.trim()) $("#fAddr").value = addr;
         const nc = nearestSupportedCity(lat, lng);
@@ -1861,18 +2045,37 @@ async function saveRestaurant(){
     lat: lat, lng: lng,
     tags: ["我添加的"],
     reviews: [],
+    poi_id: state.newPoiId || null,
     custom: true
   };
 
-  customRest.push(r);
-  saveJSON(LS_REST, customRest);
+  const btn = $("#btnSave");
+  btn.disabled = true;
+  let saved;
+  try{
+    saved = await store.addRestaurant(r);
+  }catch(err){
+    btn.disabled = false;
+    setPicked({ ok: false, msg: "保存失败：" + err.message + "（检查网络后重试）" });
+    return;
+  }
+  btn.disabled = false;
+
   closeModal();
   // 加了新店就退出目的地视图，否则新店可能落在圈外看不见
   if(state.dest){ state.dest = null; drawDestCircle(); renderDestBar(); }
+  if(saved.duplicate){
+    state.cuisines.clear();
+    switchCity(saved.item.city);
+    refresh();
+    openDetail(saved.item.id);
+    toast("这家店已经有人加过了，帮你打开它");
+    return;
+  }
   if(city !== state.city) switchCity(city);
   refresh();
-  openDetail(r.id);
-  toast("已添加「" + r.name + "」");
+  openDetail(saved.item.id);
+  toast("已添加「" + saved.item.name + "」");
 }
 
 /* =========================================================
@@ -1908,10 +2111,22 @@ function refresh(){
   renderDestBar();
 }
 
-function boot(){
+async function boot(){
   bindUI();
   initMap();
+
+  // 先把数据拉回来，再渲染列表
+  try{
+    const mode = await store.load();
+    window.__storeMode = mode;
+  }catch(e){
+    console.warn("云端加载失败，退回本机缓存", e);
+    customRest = loadJSON(LS_REST, []);
+    userRevs = loadJSON(LS_REV, {});
+    toast("云端数据加载失败，先用本机缓存");
+  }
   refresh();
+
   // 支持 #id=d15 这种直达链接（跨城市也能打开）
   const m = /^#id=([\w-]+)$/.exec(location.hash || "");
   if(m){

@@ -116,11 +116,58 @@ git push
 > **安全提醒**：这两个前端 key 会随页面源码公开，这是设计如此。但要去 高德控制台 → 对应 Key → 设置 里绑定域名白名单（`chishenme-map.pages.dev`），防止被别人拿去刷额度。
 
 > **坐标系**：高德返回 GCJ-02，站内统一存 WGS-84，所有入口和出口都做了转换。百度导航另需 BD-09，在 `gcj2bd` 里再转一次。
+## 接后端（第一阶段：数据共享）
+
+现在默认是**本机模式**：数据存在浏览器 localStorage 里，别人打开是空地图。
+
+要让所有人看到同一份数据，接 Supabase（免费，5 分钟）：
+
+### 1. 建项目
+
+https://supabase.com 注册 → New project → 记下两个值（Settings → API）：
+
+- **Project URL**，形如 `https://abcdefghijk.supabase.co`
+- **anon public** key（`anon` `public` 那一栏，不是 service_role）
+
+### 2. 建表
+
+打开 SQL Editor，把 [`supabase/schema.sql`](supabase/schema.sql) 整段粘进去执行。
+
+### 3. 填进 index.html
+
+文件顶部两个常量：
+
+```js
+const SUPABASE_URL  = "https://abcdefghijk.supabase.co";
+const SUPABASE_ANON = "填 anon public key";
+```
+
+填完就自动切到云端模式，不需要改别的代码。
+
+### 两种模式的区别
+
+|  | 本机模式（默认） | 云端模式 |
+|---|---|---|
+| 数据在哪 | 各自浏览器 | Supabase Postgres |
+| 别人能看到吗 | 看不到 | 能看到 |
+| 换设备 | 丢 | 还在 |
+| 去重 | 无 | 按高德 POI id 唯一 |
+
+`SUPABASE_URL` 留空时自动退回本机模式，所以线上不会因为没配而白屏。
+
+### 阶段一的限制（重要）
+
+- **没有登录**，身份是一台设备一个随机 id。清缓存等于换人。
+- **没有鉴权**：拿到 anon key 的人理论上能插入和删除任意数据。只适合种子期小范围试用，**别大力传播**。
+- **没有审核**：文字和图片都没过滤。
+- 每次打开会拉全量数据，几千条以内没问题，再往上要改成按视野加载。
+
+上量之前要做第二阶段：接 Auth、把 RLS 策略改成基于 `auth.uid()`、加内容审核。
 ## 已知限制
 
 - 目前没有任何内置餐厅，所有内容都来自用户添加。
 - 底图用高德 JSAPI 2.0 矢量渲染，需网络加载 webapi.amap.com；离线或加载失败时降级为纯列表模式。
-- 数据只存在各自浏览器本地，不同人之间不互通。要多人共享需要接后端（Supabase / 微信云开发）。
+- 默认本机模式，数据不互通；填了 Supabase 配置后才会共享。
 - 市中心点位做了网格聚簇，算法在 `drawMarkers()` 里，迁到小程序可以直接复用。
 
 ## 后续计划
