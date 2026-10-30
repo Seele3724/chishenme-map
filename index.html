@@ -620,6 +620,7 @@ const DEMO_CD = [];
 const CITY_DATA = {
   "上海": DEMO_SH,
   "北京": DEMO_BJ,
+  "南京": [],          // 待补充
   "广州": [],          // 待补充
   "深圳": [],          // 待补充
   "杭州": DEMO_HZ,
@@ -628,11 +629,12 @@ const CITY_DATA = {
 Object.keys(CITY_DATA).forEach(c => CITY_DATA[c].forEach(r => { r.city = c; }));
 const DEMO = [].concat(DEMO_SH, DEMO_BJ, DEMO_HZ, DEMO_CD);
 
-const CITIES = ["上海", "北京", "广州", "深圳", "杭州", "成都"];
-const CITY_ABBR = { "上海": "沪", "北京": "京", "广州": "穗", "深圳": "深", "杭州": "杭", "成都": "蓉" };
+const CITIES = ["上海", "北京", "南京", "广州", "深圳", "杭州", "成都"];
+const CITY_ABBR = { "上海": "沪", "北京": "京", "南京": "宁", "广州": "穗", "深圳": "深", "杭州": "杭", "成都": "蓉" };
 const CITY_VIEW = {
   "上海": { center: [31.2260, 121.4700], zoom: 13 },
   "北京": { center: [39.9200, 116.4150], zoom: 12 },
+  "南京": { center: [32.0415, 118.7845], zoom: 13 },
   "广州": { center: [23.1290, 113.2640], zoom: 13 },
   "深圳": { center: [22.5430, 114.0580], zoom: 13 },
   "杭州": { center: [30.2450, 120.1550], zoom: 13 },
@@ -2127,17 +2129,27 @@ async function boot(){
   bindUI();
   initMap();
 
-  // 先把数据拉回来，再渲染列表
-  try{
-    const mode = await store.load();
-    window.__storeMode = mode;
-  }catch(e){
-    console.warn("云端加载失败，退回本机缓存", e);
+  // 先用本机缓存把界面画出来，别让用户对着空白等网络
+  if(!store.remote){
     customRest = loadJSON(LS_REST, []);
     userRevs = loadJSON(LS_REV, {});
-    toast("云端数据加载失败，先用本机缓存");
   }
   refresh();
+
+  // 再把云端数据补上；失败就保持本机数据不动
+  if(store.remote){
+    try{
+      await store.load();
+      window.__storeMode = "remote";
+      refresh();
+    }catch(e){
+      console.warn("云端加载失败", e);
+      window.__storeMode = "cache";
+      toast("云端数据加载失败，先用本机缓存");
+    }
+  }else{
+    window.__storeMode = "local";
+  }
 
   // 支持 #id=d15 这种直达链接（跨城市也能打开）
   const m = /^#id=([\w-]+)$/.exec(location.hash || "");
