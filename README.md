@@ -67,16 +67,14 @@ git push
 
 ## 加一个城市
 
-三处改动，都在 `index.html` 里：
+两处，都在 `index.html` 里：
 
-1. 准备数据数组，比如 `const DEMO_SZ = [...];`，每条餐厅不需要写 `city`（会自动挂上）。
-2. 注册到 `CITY_DATA`：
-   ```js
-   const CITY_DATA = { "上海": DEMO_SH, "北京": DEMO_BJ, "杭州": DEMO_HZ, "成都": DEMO_CD, "深圳": DEMO_SZ };
-   const CITY_VIEW = { ..., "深圳": { center: [22.5431, 114.0579], zoom: 13 } };
-   const CITY_ABBR = { ..., "深圳": "深" };   // 左上角印章的字
-   ```
-3. 把 `DEMO_SZ` 也拼进 `const DEMO = [].concat(...)`。
+1. 往 `CITIES` 数组里加名字（顺序就是城市横滑条上的顺序）。
+2. 在 `CITY_VIEW` 里加中心点和初始缩放：`"深圳": { center: [22.5431, 114.0579], zoom: 11 }`。
+
+`CITY_DATA` 会自动补空数组，`CITY_ABBR` 没写就用城市名的第一个字，所以不加也不会报错。
+
+如果想内置一批餐厅数据，再准备一个 `const DEMO_SZ = [...]` 数组、写进 `CITY_DATA`，并拼进 `const DEMO = [].concat(...)`。
 
 城市按钮、标题、图例、菜系筛选会自动跟着变（菜系筛选只列当前城市实际有的）。
 
