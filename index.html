@@ -86,6 +86,7 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 
 .filters{padding:12px 18px 0;flex:none}
 .frow{display:flex;gap:8px;margin-bottom:9px;align-items:center}
+.frow>.chips{min-width:0}
 .frow>label{font-size:11.5px;color:var(--ink3);width:38px;flex:none;letter-spacing:.5px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{
@@ -96,8 +97,18 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 .chip:hover{border-color:#cfc4ae}
 .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .chip .dot{width:7px;height:7px;border-radius:50%;flex:none}
-#cityChips{gap:4px}
-#cityChips .chip{padding:3px 8px;font-size:11.5px}
+#cityChips{
+  gap:4px;
+  /* 城市多，横滑一条，别撑成好几行 */
+  flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;-ms-overflow-style:none;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:2px;
+  mask-image:linear-gradient(90deg,#000 calc(100% - 18px),transparent);
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 18px),transparent);
+}
+#cityChips::-webkit-scrollbar{display:none}
+#cityChips .chip{padding:3px 8px;font-size:11.5px;flex:none}
 /* 菜系类别多，整体收窄保证全部能露出来；不截断，否则后面的选项用户看不到 */
 #cuisineChips{gap:5px}
 #cuisineChips .chip{padding:3.5px 9px;font-size:11.5px}
@@ -692,26 +703,67 @@ const DEMO_CD = [];
 const CITY_DATA = {
   "上海": DEMO_SH,
   "北京": DEMO_BJ,
-  "南京": [],          // 待补充
-  "广州": [],          // 待补充
-  "深圳": [],          // 待补充
   "杭州": DEMO_HZ,
   "成都": DEMO_CD
 };
 Object.keys(CITY_DATA).forEach(c => CITY_DATA[c].forEach(r => { r.city = c; }));
 const DEMO = [].concat(DEMO_SH, DEMO_BJ, DEMO_HZ, DEMO_CD);
 
-const CITIES = ["上海", "北京", "南京", "广州", "深圳", "杭州", "成都"];
-const CITY_ABBR = { "上海": "沪", "北京": "京", "南京": "宁", "广州": "穗", "深圳": "深", "杭州": "杭", "成都": "蓉" };
-const CITY_VIEW = {
-  "上海": { center: [31.2260, 121.4700], zoom: 13 },
-  "北京": { center: [39.9200, 116.4150], zoom: 12 },
-  "南京": { center: [32.0415, 118.7845], zoom: 13 },
-  "广州": { center: [23.1290, 113.2640], zoom: 13 },
-  "深圳": { center: [22.5430, 114.0580], zoom: 13 },
-  "杭州": { center: [30.2450, 120.1550], zoom: 13 },
-  "成都": { center: [30.6580, 104.0700], zoom: 13 }
+/* 城市清单（顺序即界面上横滑顺序：一线在前，然后新一线/省会） */
+const CITIES = [
+  "上海", "北京", "广州", "深圳",
+  "杭州", "成都", "南京", "武汉", "西安", "重庆", "天津",
+  "苏州", "长沙", "郑州", "青岛", "厦门", "昆明", "大连",
+  "合肥", "福州", "济南", "沈阳", "哈尔滨", "宁波", "无锡",
+  "南昌", "贵阳", "南宁", "石家庄", "太原"
+];
+
+const CITY_ABBR = {
+  "上海": "沪", "北京": "京", "广州": "穗", "深圳": "深",
+  "杭州": "杭", "成都": "蓉", "南京": "宁", "武汉": "汉",
+  "西安": "西", "重庆": "渝", "天津": "津", "苏州": "苏",
+  "长沙": "长", "郑州": "郑", "青岛": "青", "厦门": "厦",
+  "昆明": "昆", "大连": "连", "合肥": "庐", "福州": "榕",
+  "济南": "泉", "沈阳": "沈", "哈尔滨": "哈", "宁波": "甬",
+  "无锡": "锡", "南昌": "昌", "贵阳": "筑", "南宁": "邕",
+  "石家庄": "石", "太原": "并"
 };
+
+const CITY_VIEW = {
+  "上海": { center: [31.2260, 121.4700], zoom: 12 },
+  "北京": { center: [39.9200, 116.4150], zoom: 11 },
+  "广州": { center: [23.1290, 113.2640], zoom: 11 },
+  "深圳": { center: [22.5430, 114.0580], zoom: 11 },
+  "杭州": { center: [30.2450, 120.1550], zoom: 11 },
+  "成都": { center: [30.6580, 104.0700], zoom: 11 },
+  "南京": { center: [32.0415, 118.7845], zoom: 11 },
+  "武汉": { center: [30.5928, 114.3055], zoom: 11 },
+  "西安": { center: [34.3416, 108.9398], zoom: 11 },
+  "重庆": { center: [29.5630, 106.5516], zoom: 11 },
+  "天津": { center: [39.0842, 117.2009], zoom: 11 },
+  "苏州": { center: [31.2989, 120.5853], zoom: 11 },
+  "长沙": { center: [28.2282, 112.9388], zoom: 11 },
+  "郑州": { center: [34.7466, 113.6254], zoom: 11 },
+  "青岛": { center: [36.0671, 120.3826], zoom: 11 },
+  "厦门": { center: [24.4798, 118.0894], zoom: 11 },
+  "昆明": { center: [24.8801, 102.8329], zoom: 11 },
+  "大连": { center: [38.9140, 121.6147], zoom: 11 },
+  "合肥": { center: [31.8206, 117.2272], zoom: 11 },
+  "福州": { center: [26.0745, 119.2965], zoom: 11 },
+  "济南": { center: [36.6512, 117.1201], zoom: 11 },
+  "沈阳": { center: [41.8057, 123.4315], zoom: 11 },
+  "哈尔滨": { center: [45.8038, 126.5349], zoom: 11 },
+  "宁波": { center: [29.8683, 121.5440], zoom: 11 },
+  "无锡": { center: [31.4912, 120.3119], zoom: 11 },
+  "南昌": { center: [28.6820, 115.8579], zoom: 11 },
+  "贵阳": { center: [26.6470, 106.6302], zoom: 11 },
+  "南宁": { center: [22.8170, 108.3665], zoom: 11 },
+  "石家庄": { center: [38.0428, 114.5149], zoom: 11 },
+  "太原": { center: [37.8706, 112.5489], zoom: 11 }
+};
+
+/* 没写数据数组的城市，用空数组兜底，省得一个个列 */
+CITIES.forEach(c => { if(!CITY_DATA[c]) CITY_DATA[c] = []; });
 
 /* =========================================================
    1b. 持久化层
@@ -1482,6 +1534,7 @@ async function searchDestination(query){
       $("#brandTitle").textContent = picked.city + "美食地图";
       document.title = picked.city + "美食地图";
       state.cuisines.clear();
+      centerCityChip();
     }
     applyDestination(picked.place);
     toast("已定位到「" + picked.place.name + "」");
@@ -1861,6 +1914,15 @@ function renderCuisineFilters(){
   }
 }
 
+/* 城市是横滑条，切城市后把选中的那个滚到中间，别让它在屏幕外 */
+function centerCityChip(){
+  const box = document.getElementById("cityChips");
+  if(!box) return;
+  const on = box.querySelector(".chip.on");
+  if(!on) return;
+  box.scrollLeft = Math.max(0, on.offsetLeft - box.clientWidth / 2 + on.offsetWidth / 2);
+}
+
 function bindUI(){
   // 城市切换
   $("#cityChips").innerHTML = CITIES.map(c =>
@@ -1871,6 +1933,7 @@ function bindUI(){
     const btn = e.target.closest(".chip");
     if(btn) switchCity(btn.dataset.city);
   });
+  centerCityChip();
 
   // 菜系 chips（只列当前城市有的）
   renderCuisineFilters();
@@ -2160,6 +2223,7 @@ function switchCity(city){
   document.querySelectorAll("#cityChips .chip").forEach(b => {
     b.classList.toggle("on", b.dataset.city === city);
   });
+  centerCityChip();
   renderCuisineFilters();
 
   $("#brandSeal").textContent = CITY_ABBR[city] || city.slice(0, 1);
