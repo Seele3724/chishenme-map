@@ -2431,6 +2431,9 @@ async function boot(){
     try{
       await store.load();
       window.__storeMode = "remote";
+      // 云端模式下数据是共享的，那句「只保存在本机」的提示不再成立
+      const note = document.querySelector(".demo-note");
+      if(note) note.style.display = "none";
       refresh();
     }catch(e){
       console.warn("云端加载失败", e);
