@@ -865,7 +865,12 @@ const store = {
 
   async deleteReview(restaurantId, reviewId){
     if(this.remote){
-      await sbRequest("reviews?id=eq." + encodeURIComponent(reviewId), { method: "DELETE" });
+      // 走函数而不是直接 DELETE：服务端会核对 device_id，别人的评价删不掉
+      const ok = await sbRequest("rpc/delete_own_review", {
+        method: "POST",
+        body: JSON.stringify({ p_id: reviewId, p_device: MY_DEVICE })
+      });
+      if(ok !== true) throw new Error("这条不是你发的，删不了");
     }
     userRevs[restaurantId] = (userRevs[restaurantId] || []).filter(x => x.id !== reviewId);
     if(!userRevs[restaurantId].length) delete userRevs[restaurantId];
