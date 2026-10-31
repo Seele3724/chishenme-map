@@ -865,12 +865,14 @@ const store = {
 
   async deleteReview(restaurantId, reviewId){
     if(this.remote){
-      // 走函数而不是直接 DELETE：服务端会核对 device_id，别人的评价删不掉
-      const ok = await sbRequest("rpc/delete_own_review", {
+      // 走函数而不是直接 DELETE：服务端核对 device_id，别人的评价删不掉。
+      // 删成功会返回这条评价的图片 URL，接着把图片也删掉。
+      const photos = await sbRequest("rpc/delete_own_review", {
         method: "POST",
         body: JSON.stringify({ p_id: reviewId, p_device: MY_DEVICE })
       });
-      if(ok !== true) throw new Error("这条不是你发的，删不了");
+      if(!Array.isArray(photos)) throw new Error("这条不是你发的，删不了");
+      await deleteReviewPhotos(photos);
     }
     userRevs[restaurantId] = (userRevs[restaurantId] || []).filter(x => x.id !== reviewId);
     if(!userRevs[restaurantId].length) delete userRevs[restaurantId];
@@ -1663,6 +1665,26 @@ async function uploadPhoto(p){
   });
   if(!res.ok) throw new Error("图片上传失败，检查存储桶是否建好");
   return SUPABASE_URL.replace(/\/+$/, "") + "/storage/v1/object/public/review-photos/" + path;
+}
+
+/* 删评价时连带删图。
+   服务端在 delete_own_review 里已把这几张登记成「可删」，
+   所以这里的 DELETE 才会被存储策略放行；删完把授权行清掉。 */
+async function deleteReviewPhotos(urls){
+  const base = SUPABASE_URL.replace(/\/+$/, "");
+  const h = { "apikey": SUPABASE_ANON, "Authorization": "Bearer " + SUPABASE_ANON };
+  for(const u of urls){
+    const i = String(u || "").indexOf("/review-photos/");
+    if(i < 0) continue;
+    const path = u.slice(i + "/review-photos/".length);
+    try{
+      const r = await fetch(base + "/storage/v1/object/review-photos/" + path, { method: "DELETE", headers: h });
+      if(r.ok){
+        await fetch(base + "/rest/v1/photo_deletions?path=eq." + encodeURIComponent(path),
+                    { method: "DELETE", headers: h });
+      }
+    }catch(e){ /* 图删不掉不影响评价已删，下次再清也行 */ }
+  }
 }
 
 function openLightbox(src){
