@@ -424,10 +424,35 @@ select.mini{
   .mapbtn{top:auto;bottom:calc(62vh + 12px);right:12px;flex-direction:column}
   .mapbtn button{height:30px;padding:0 10px;font-size:11.5px}
   #panel.collapsed ~ #mapwrap .mapbtn{bottom:calc(86px + 12px)}
-  #detail{width:100%;border-left:none}
+
+  /* 详情：手机上整屏从下往上推，别再用 452px 的侧栏（会横向溢出、关闭按钮跑到屏幕外） */
+  #detail{
+    position:fixed;left:0;right:0;top:0;bottom:0;
+    width:auto;max-width:none;height:100dvh;
+    border-left:none;border-radius:0;box-shadow:none;
+    transform:translateY(20px);opacity:0;pointer-events:none;
+    transition:transform .26s cubic-bezier(.32,.72,.28,1),opacity .18s ease;
+  }
+  #detail.open{transform:none;opacity:1;pointer-events:auto}
+  .dhead{padding:calc(12px + env(safe-area-inset-top)) 18px 12px}
+  .dhead h2{font-size:18px;margin:0 46px 8px 0;padding-right:6px}
+  .close{width:38px;height:38px;font-size:17px;right:14px;top:calc(10px + env(safe-area-inset-top))}
+  #dbody{padding:14px 16px calc(30px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
+  .navbtn,.delrest{height:44px;font-size:14px}
+  .delrest{flex:1;min-width:110px;padding:0 12px}
+  .dact{flex-wrap:wrap;gap:10px}
+
+  /* 输入框 16px：iOS 上小于 16px 聚焦会自动放大页面 */
+  .search input,.form input[type=text],.form textarea,#fName,#fPrice,#rvUser,#rvText{font-size:16px}
+
+  /* 手指友好一点 */
+  .chip{height:32px;padding:0 12px;font-size:12.5px}
+  .pfoot a{padding:6px 0}
+
   .filters{padding-top:9px}
-  #list{padding:8px 12px 14px}
+  #list{padding:8px 12px calc(14px + env(safe-area-inset-bottom))}
   .card{padding:10px 12px}
+  .card h3{font-size:15px}
 }
 
 @media (prefers-reduced-motion: reduce){
@@ -931,6 +956,12 @@ const state = {
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
+/* 高德偶尔会给出「上海市上海市静安区…」这种重复前缀，显示前压一下 */
+function cleanAddr(a){
+  if(!a) return "";
+  return String(a).replace(/^([\u4e00-\u9fa5]{2,6}(?:市|省|区|县))\1+/, "$1");
+}
+
 function allRest(){ return DEMO.concat(customRest); }
 function findRest(id){ return allRest().find(r => r.id === id); }
 
@@ -1256,7 +1287,7 @@ async function geocodeAmap(q){
     return {
       name: p.name,
       poiId: p.id ? String(p.id) : null,
-      addr: (p.pname || "") + (p.cityname || "") + (p.adname || "") + (p.address || ""),
+      addr: cleanAddr((p.pname || "") + (p.cityname || "") + (p.adname || "") + (p.address || "")),
       lat: g[1], lng: g[0]
     };
   });
@@ -1513,7 +1544,7 @@ function renderList(){
         '<span>' + (s.count ? s.count + " 条评价" : "暂无评价") + '</span>' +
         (state.dest ? distTxt : '<span class="sep">·</span><span>' + esc(r.city) + '</span>') +
       '</div>' +
-      '<div class="card-addr">' + esc(r.addr || "地址待补充") + '</div>' +
+      '<div class="card-addr">' + esc(cleanAddr(r.addr) || "地址待补充") + '</div>' +
     '</article>';
   }).join("");
 }
@@ -1541,7 +1572,7 @@ function openDetail(id){
     '</div>' +
     '<div class="daddr">' +
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1d1c1a" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>' +
-      '<span>' + esc(r.addr || "地址待补充") + '</span>' +
+      '<span>' + esc(cleanAddr(r.addr) || "地址待补充") + '</span>' +
     '</div>' +
     ((r.tags && r.tags.length)
       ? '<div class="dtags">' + r.tags.map(t => '<span>#' + esc(t) + '</span>').join("") + '</div>'
@@ -1774,7 +1805,7 @@ function openNav(id){
   if(!r || r.lat == null) return;
   navTargetId = r.id;
   $("#navTitle").textContent = "去「" + r.name + "」";
-  $("#navAddr").textContent = r.addr || "（地址待补充，将按坐标导航）";
+  $("#navAddr").textContent = cleanAddr(r.addr) || "（地址待补充，将按坐标导航）";
   $("#navModal").classList.add("open");
 }
 function closeNav(){ $("#navModal").classList.remove("open"); }
