@@ -254,6 +254,32 @@ select.mini{
 }
 .delrev:hover{color:var(--accent)}
 
+/* 评价配图 */
+.photobox{display:flex;flex-wrap:wrap;gap:8px}
+.photobox .ph{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);flex:none}
+.photobox .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.photobox .del{
+  position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.62);color:#fff;font-size:12px;line-height:1;padding:0;
+}
+.photobox .addph{
+  width:64px;height:64px;flex:none;border-radius:8px;border:1px dashed #d6cdbd;
+  background:#fbf7ef;color:var(--ink3);font-size:20px;line-height:1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+}
+.photobox .addph span{font-size:10px}
+.photobox .addph:hover{border-color:#c3b7a2;background:#f6efe2}
+
+.rev-photos{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.rev-photos img{
+  width:72px;height:72px;object-fit:cover;border-radius:7px;
+  cursor:zoom-in;border:1px solid var(--line);background:#f4efe4;
+}
+
+#lightbox{position:fixed;inset:0;background:rgba(15,12,8,.92);z-index:1500;display:none;align-items:center;justify-content:center;padding:20px}
+#lightbox.on{display:flex}
+#lightbox img{max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+
 .form{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
 .form .field{margin-bottom:11px}
 .form .field:last-of-type{margin-bottom:0}
@@ -766,7 +792,8 @@ const store = {
         stars: v.stars,
         text: v.body,
         ts: v.created_at,
-        device: v.device_id
+        device: v.device_id,
+        photos: v.photos || []
       });
     });
     return "remote";
@@ -820,13 +847,15 @@ const store = {
         device_id: MY_DEVICE,
         nickname: rev.user,
         stars: rev.stars,
-        body: rev.text
+        body: rev.text,
+        photos: rev.photos || []
       })
     });
     const v = rows[0];
     const item = {
       id: v.id, user: v.nickname || rev.user, stars: v.stars,
-      text: v.body, ts: v.created_at, device: MY_DEVICE
+      text: v.body, ts: v.created_at, device: MY_DEVICE,
+      photos: v.photos || []
     };
     (userRevs[restaurantId] = userRevs[restaurantId] || []).push(item);
     return item;
@@ -1461,6 +1490,7 @@ function openDetail(id){
   if(!r) return;
   state.selectedId = id;
   state.tempStars = 5;
+  tempPhotos = [];
   const s = statsFor(r);
 
   $("#dheadInner").innerHTML =
@@ -1507,6 +1537,11 @@ function renderReviews(r){
     ? all.map(rv => {
         // 云端模式下别人的评价也在本地数组里，用设备 id 判断归属
         const mineFlag = rv.device ? rv.device === MY_DEVICE : mine.some(x => x.id === rv.id);
+        const imgs = (rv.photos && rv.photos.length)
+          ? '<div class="rev-photos">' +
+              rv.photos.map(u => '<img src="' + esc(u) + '" loading="lazy" alt="" data-photo="' + esc(u) + '">').join("") +
+            '</div>'
+          : '';
         return '<div class="rev">' +
           '<div class="rev-top">' +
             '<div class="avatar">' + esc(String(rv.user || "客").slice(0, 1)) + '</div>' +
@@ -1515,6 +1550,7 @@ function renderReviews(r){
             '<time>' + esc(fmt(rv.ts)) + '</time>' +
           '</div>' +
           '<p>' + esc(rv.text) + '</p>' +
+          imgs +
           (mineFlag ? '<button class="delrev" data-del="' + rv.id + '">删除</button>' : '') +
         '</div>';
       }).join("")
@@ -1532,9 +1568,107 @@ function renderReviews(r){
           '</div></div>' +
         '<div class="field"><label>说点什么</label>' +
           '<textarea id="rvText" placeholder="这家店好在哪？值得点什么？排队久吗？" maxlength="300"></textarea></div>' +
+        '<div class="field"><label>照片（最多 ' + MAX_PHOTOS + ' 张）</label>' +
+          '<div class="photobox" id="photoBox"></div>' +
+          '<input type="file" id="photoInput" accept="image/*" multiple hidden>' +
+        '</div>' +
         '<button class="btn" id="btnSubmitRev">提交评价</button>' +
       '</div>' +
     '</div>';
+
+  renderPhotoPicker();
+}
+
+/* ---------- 评价配图 ---------- */
+const MAX_PHOTOS = 3;
+let tempPhotos = [];      // [{ blob, dataUrl }]
+
+function renderPhotoPicker(){
+  const box = $("#photoBox");
+  if(!box) return;
+  box.innerHTML = tempPhotos.map((p, i) =>
+    '<span class="ph"><img src="' + p.dataUrl + '" alt=""><button class="del" data-rmphoto="' + i + '">×</button></span>'
+  ).join("") +
+  (tempPhotos.length < MAX_PHOTOS
+    ? '<button class="addph" id="btnAddPhoto">＋<span>加图</span></button>'
+    : "");
+}
+
+/* 压到 1400px 长边、JPEG，顺手产出一份 dataUrl 供本机模式用 */
+function compressImage(file, maxSide, quality){
+  maxSide = maxSide || 1400;
+  quality = quality || 0.82;
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try{
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        cv.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          if(!blob){ reject(new Error("图片处理失败")); return; }
+          resolve({ blob: blob, dataUrl: cv.toDataURL("image/jpeg", 0.72) });
+        }, "image/jpeg", quality);
+      }catch(e){
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("图片读取失败")); };
+    img.src = url;
+  });
+}
+
+async function handlePhotoFiles(files){
+  const room = MAX_PHOTOS - tempPhotos.length;
+  const picked = Array.prototype.slice.call(files).slice(0, Math.max(0, room));
+  for(const f of picked){
+    if(!f.type.startsWith("image/")){ toast("只能选图片"); continue; }
+    if(f.size > 15 * 1024 * 1024){ toast("单张别超过 15MB"); continue; }
+    try{
+      const out = await compressImage(f);
+      tempPhotos.push(out);
+    }catch(e){
+      toast(e.message);
+    }
+  }
+  renderPhotoPicker();
+}
+
+/* 上传到 Supabase Storage，返回公开 URL；本机模式直接返回 dataUrl */
+async function uploadPhoto(p){
+  if(!store.remote) return p.dataUrl;
+  const path = MY_DEVICE + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".jpg";
+  const res = await fetch(SUPABASE_URL.replace(/\/+$/, "") + "/storage/v1/object/review-photos/" + path, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_ANON,
+      "Authorization": "Bearer " + SUPABASE_ANON,
+      "Content-Type": "image/jpeg",
+      "x-upsert": "false"
+    },
+    body: p.blob
+  });
+  if(!res.ok) throw new Error("图片上传失败，检查存储桶是否建好");
+  return SUPABASE_URL.replace(/\/+$/, "") + "/storage/v1/object/public/review-photos/" + path;
+}
+
+function openLightbox(src){
+  let lb = document.getElementById("lightbox");
+  if(!lb){
+    lb = document.createElement("div");
+    lb.id = "lightbox";
+    lb.innerHTML = '<img alt="">';
+    lb.addEventListener("click", () => lb.classList.remove("on"));
+    document.body.appendChild(lb);
+  }
+  lb.querySelector("img").src = src;
+  lb.classList.add("on");
 }
 
 function paintStars(n){
@@ -1753,6 +1887,21 @@ function bindUI(){
     const star = e.target.closest("[data-star]");
     if(star){ paintStars(Number(star.dataset.star)); return; }
 
+    // 配图
+    if(e.target.closest("#btnAddPhoto")){
+      const inp = $("#photoInput");
+      if(inp) inp.click();
+      return;
+    }
+    const rm = e.target.closest("[data-rmphoto]");
+    if(rm){
+      tempPhotos.splice(Number(rm.dataset.rmphoto), 1);
+      renderPhotoPicker();
+      return;
+    }
+    const shot = e.target.closest("[data-photo]");
+    if(shot){ openLightbox(shot.dataset.photo); return; }
+
     const del = e.target.closest("[data-del]");
     if(del){
       const id = state.selectedId;
@@ -1777,19 +1926,36 @@ function bindUI(){
       const user = ($("#rvUser").value.trim() || "我").slice(0, 12);
       const btn = $("#btnSubmitRev");
       btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = tempPhotos.length ? "上传图片中…" : "提交中…";
       try{
+        const photos = [];
+        for(const p of tempPhotos){
+          photos.push(await uploadPhoto(p));
+        }
         await store.addReview(id, {
           id: "u" + Date.now() + Math.random().toString(36).slice(2, 6),
-          user: user, stars: state.tempStars, text: text, ts: Date.now(), device: MY_DEVICE
+          user: user, stars: state.tempStars, text: text, ts: Date.now(),
+          device: MY_DEVICE, photos: photos
         });
+        tempPhotos = [];
         const r = findRest(id);
         if(r){ renderReviews(r); openDetailStatsOnly(r); }
         drawMarkers(); renderList();
-        toast("评价已保存");
+        toast(photos.length ? "评价和 " + photos.length + " 张图已保存" : "评价已保存");
       }catch(err){
         btn.disabled = false;
+        btn.textContent = label;
         toast("保存失败：" + err.message);
       }
+    }
+  });
+
+  // 选图
+  $("#dbody").addEventListener("change", async e => {
+    if(e.target && e.target.id === "photoInput"){
+      await handlePhotoFiles(e.target.files);
+      e.target.value = "";
     }
   });
 

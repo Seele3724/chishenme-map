@@ -163,6 +163,17 @@ const SUPABASE_ANON = "填 anon public key";
 - 每次打开会拉全量数据，几千条以内没问题，再往上要改成按视野加载。
 
 上量之前要做第二阶段：接 Auth、把 RLS 策略改成基于 `auth.uid()`、加内容审核。
+### 评价配图
+
+再跑一次 [`supabase/migration-photos.sql`](supabase/migration-photos.sql)，它会：
+
+- 给 `reviews` 加 `photos text[]` 列
+- 建一个公开读取的 `review-photos` 存储桶
+- 开匿名上传权限
+
+前端会自动把图片压到长边 1400px、JPEG 0.82 再上传，单条评价最多 3 张、单张上限 15MB。
+
+**没跑这个 SQL 的话**，评价能写但带图会失败（提示「图片上传失败，检查存储桶是否建好」），文字评价不受影响。
 ## 已知限制
 
 - 目前没有任何内置餐厅，所有内容都来自用户添加。
