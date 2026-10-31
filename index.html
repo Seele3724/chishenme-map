@@ -213,6 +213,11 @@ select.mini{
   transition:.15s;
 }
 .navbtn:hover{background:#17453b}
+.delrest{
+  height:38px;padding:0 14px;border:1px solid #e6c9c4;border-radius:9px;background:#fff;
+  color:#b3261e;font-size:13px;font-weight:600;font-family:inherit;white-space:nowrap;transition:.15s;
+}
+.delrest:hover{background:#fdf1ef;border-color:#d99a92}
 
 .navopt{
   display:flex;align-items:center;gap:11px;width:100%;text-align:left;
@@ -879,6 +884,21 @@ const store = {
     if(!this.remote) saveJSON(LS_REV, userRevs);
   },
 
+  async deleteRestaurant(id){
+    if(this.remote){
+      // 同样走函数：只有添加者能删，连带把这家店所有评价的图也删掉
+      const photos = await sbRequest("rpc/delete_own_restaurant", {
+        method: "POST",
+        body: JSON.stringify({ p_id: id, p_device: MY_DEVICE })
+      });
+      if(!Array.isArray(photos)) throw new Error("这不是你添加的，删不了");
+      await deleteReviewPhotos(photos);
+    }
+    customRest = customRest.filter(r => r.id !== id);
+    delete userRevs[id];
+    if(!this.remote) saveJSON(LS_REST, customRest);
+  },
+
   async reset(){
     if(!this.remote){
       try{ localStorage.removeItem(LS_REST); localStorage.removeItem(LS_REV); }catch(e){}
@@ -913,6 +933,13 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp
 
 function allRest(){ return DEMO.concat(customRest); }
 function findRest(id){ return allRest().find(r => r.id === id); }
+
+/* 只有「自己添加的」才有删除按钮；内置/别人加的都藏起来 */
+function canDeleteRest(r){
+  if(!r) return false;
+  if(store.remote) return !!(r.device && r.device === MY_DEVICE);
+  return !!r.custom;
+}
 
 function reviewsFor(id){
   const base = (findRest(id) || {}).reviews || [];
@@ -1524,6 +1551,7 @@ function openDetail(id){
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11l18-7-7 18-2.5-7.5L3 11z"/></svg>' +
         '导航到这里' +
       '</button>' +
+      (canDeleteRest(r) ? '<button class="delrest" data-act="delrest">删除这家店</button>' : '') +
     '</div>';
 
   renderReviews(r);
@@ -1887,9 +1915,29 @@ function bindUI(){
 
   $("#btnClose").addEventListener("click", closeDetail);
 
-  // 导航
-  $("#detail").addEventListener("click", e => {
-    if(e.target.closest('[data-act="nav"]')) openNav(state.selectedId);
+  // 导航 + 删除餐厅
+  $("#detail").addEventListener("click", async e => {
+    if(e.target.closest('[data-act="nav"]')){ openNav(state.selectedId); return; }
+
+    const delBtn = e.target.closest('[data-act="delrest"]');
+    if(delBtn){
+      const r = findRest(state.selectedId);
+      if(!r) return;
+      if(!confirm("删除「" + r.name + "」？\n这家店下面的评价和图片也会一起删掉，删了就找不回来了。")) return;
+      const label = delBtn.textContent;
+      delBtn.disabled = true;
+      delBtn.textContent = "删除中…";
+      try{
+        await store.deleteRestaurant(r.id);
+        closeDetail();
+        refresh();
+        toast("已删除「" + r.name + "」");
+      }catch(err){
+        delBtn.disabled = false;
+        delBtn.textContent = label;
+        toast("删除失败：" + err.message);
+      }
+    }
   });
   $("#navClose").addEventListener("click", closeNav);
   $("#navModal").addEventListener("click", e => {
