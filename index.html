@@ -96,8 +96,12 @@ input,select,textarea{font-family:inherit;font-size:14px;color:var(--ink)}
 .chip:hover{border-color:#cfc4ae}
 .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .chip .dot{width:7px;height:7px;border-radius:50%;flex:none}
-#cityChips{gap:5px}
-#cityChips .chip{padding:4px 9px;font-size:12px}
+#cityChips{gap:4px}
+#cityChips .chip{padding:3px 8px;font-size:11.5px}
+/* 菜系类别多，整体收窄保证全部能露出来；不截断，否则后面的选项用户看不到 */
+#cuisineChips{gap:5px}
+#cuisineChips .chip{padding:3.5px 9px;font-size:11.5px}
+#cuisineChips .chip .dot{width:6px;height:6px}
 select.mini{
   height:31px;border:1px solid var(--line);border-radius:8px;background:#fff;
   padding:0 8px;font-size:12.5px;color:var(--ink2);outline:none;flex:1;min-width:0;
@@ -585,11 +589,20 @@ select.mini{
 /* =========================================================
    1. 数据层
    ========================================================= */
-const CUISINES = ["本帮菜","川菜","粤菜","日料","西餐","面点小吃","火锅","咖啡甜品","烧烤","其他"];
+/* 菜系/品类：区域菜 → 异国 → 品类 → 其他。
+   只增不删——删掉会让已有数据的店在筛选里消失。 */
+const CUISINES = [
+  "本帮菜","江浙菜","川菜","湘菜","粤菜","东北菜","西北菜","云南菜",
+  "日料","韩料","西餐","东南亚",
+  "面点小吃","火锅","烧烤","咖啡甜品","酒吧","素食",
+  "其他"
+];
 const CU_COLOR = {
-  "本帮菜":"#c0392b","川菜":"#e67e22","粤菜":"#c99a14","日料":"#8e44ad",
-  "西餐":"#2c78a8","面点小吃":"#12a08a","火锅":"#a0410d","咖啡甜品":"#b57b4e",
-  "烧烤":"#6d4c41","其他":"#7f8c8d"
+  "本帮菜":"#c0392b","江浙菜":"#d35400","川菜":"#e8412c","湘菜":"#e67e22",
+  "粤菜":"#c9a227","东北菜":"#8a9a2a","西北菜":"#a0522d","云南菜":"#2f8f6f",
+  "日料":"#8e44ad","韩料":"#c04a7a","西餐":"#2c78a8","东南亚":"#0e8f9e",
+  "面点小吃":"#e0a458","火锅":"#a0410d","烧烤":"#6d4c41","咖啡甜品":"#b57b4e",
+  "酒吧":"#6b4fa8","素食":"#3f9d52","其他":"#7f8c8d"
 };
 
 /* ------------------------------------------------------------------
