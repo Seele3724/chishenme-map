@@ -688,7 +688,9 @@ const CITY_VIEW = {
    配了 Supabase 就走云端（所有人共享），没配就退回本机 localStorage。
    两种模式对上层暴露同一组接口，业务代码不用关心后端是谁。
    ========================================================= */
-const SUPABASE_URL  = "https://vovzusarziwiimbkazqk.supabase.co";
+/* 走同域反代（functions/api/[[path]].js）→ 国内的手机不开 VPN 也能连。
+   原来直连 https://vovzusarziwiimbkazqk.supabase.co，该域名在境内被重置。 */
+const SUPABASE_URL  = "/api";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdnp1c2Fyeml3aWltYmthenFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNjUwMTQsImV4cCI6MjEwODk0MTAxNH0.Sd8Wdxk9DJegwjrivg-30hLx2skuvNsFmNa0Fnf6K9Y";
 
 const LS_REST = "shmap.custom.v1";
