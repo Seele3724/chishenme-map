@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>上传链路测试 · 吃什么</title>
+<style>
+  :root{--ink:#1d1c1a;--paper:#fffdf9;--line:#e9e2d5;--accent:#c8452a;--ok:#1f6f4a;--bad:#b3261e}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;padding:20px 18px 40px;background:#f2ece1;color:var(--ink);
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{font-size:12.5px;color:#8a8378;margin-bottom:16px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  button{width:100%;height:48px;border:0;border-radius:11px;background:var(--accent);color:#fff;
+         font-size:16px;font-weight:600;font-family:inherit}
+  button:disabled{opacity:.55}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px dashed #eee5d5;font-size:14px}
+  .row:last-child{border-bottom:0}
+  .row .k{color:#6d675e;flex:none}
+  .row .v{text-align:right;font-weight:600;word-break:break-all}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .wait{color:#9a8f7d}
+  .hint{font-size:12.5px;color:#8a8378;margin-top:12px;line-height:1.65}
+  .big{font-size:17px;font-weight:700;text-align:center;margin:6px 0 2px}
+  #log{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;color:#6d675e;max-height:210px;overflow:auto}
+</style>
+</head>
+<body>
+  <h1>上传链路测试</h1>
+  <div class="sub">测的是「手机 → Cloudflare → Supabase」这条路通不通</div>
+
+  <div class="card">
+    <div class="big" id="verdict">还没开始</div>
+    <div class="hint" style="text-align:center;margin-top:4px">点下面的按钮，几秒出结果</div>
+  </div>
+
+  <div class="card">
+    <button id="go">开始测试</button>
+    <div class="hint">建议先关掉 WiFi，用手机流量跑一次；再用 WiFi 跑一次，好对比。</div>
+  </div>
+
+  <div class="card" id="rows"></div>
+
+  <div class="card">
+    <div style="font-size:12.5px;color:#8a8378;margin-bottom:6px">详细日志</div>
+    <div id="log">—</div>
+  </div>
+
+<script>
+const API = "/api";
+const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdnp1c2Fyeml3aWltYmthenFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNjUwMTQsImV4cCI6MjEwODk0MTAxNH0.Sd8Wdxk9DJegwjrivg-30hLx2skuvNsFmNa0Fnf6K9Y";
+const H = { apikey: KEY, Authorization: "Bearer " + KEY };
+const rows = document.getElementById("rows");
+const logEl = document.getElementById("log");
+const verdict = document.getElementById("verdict");
+const go = document.getElementById("go");
+
+function addRow(k, v, cls) {
+  const d = document.createElement("div");
+  d.className = "row";
+  d.innerHTML = '<span class="k">' + k + '</span><span class="v ' + (cls || "") + '">' + v + "</span>";
+  rows.appendChild(d);
+}
+const log = (m) => { logEl.textContent = (logEl.textContent === "—" ? "" : logEl.textContent + "\n") + m; };
+const ms = (t) => Math.round(t) + " ms";
+
+async function timed(label, fn) {
+  const t0 = performance.now();
+  try {
+    const r = await fn();
+    return { ok: r.ok, status: r.status, dt: performance.now() - t0 };
+  } catch (e) {
+    log(label + " threw: " + e.message);
+    return { ok: false, status: "错误", msg: e.message, dt: performance.now() - t0 };
+  }
+}
+
+go.addEventListener("click", async () => {
+  go.disabled = true;
+  rows.innerHTML = "";
+  logEl.textContent = "—";
+  verdict.textContent = "测试中…";
+  verdict.className = "big wait";
+
+  // 1) 代理是否活着
+  const r1 = await timed("rest", () => fetch(API + "/rest/v1/reviews?select=id&limit=1", { headers: H }));
+  addRow("① 代理连通", r1.ok ? "通（" + r1.status + "）" : String(r1.status) + (r1.msg ? " " + r1.msg : ""), r1.ok ? "ok" : "bad");
+  addRow("① 耗时", ms(r1.dt));
+  log("rest status=" + r1.status + " dt=" + ms(r1.dt));
+
+  // 2) 上传一张测试图（纯灰点 jpeg，几 KB）
+  const name = "probe/" + Date.now() + ".jpg";
+  const bytes = await makeJpeg();
+  const t = performance.now();
+  let up = { ok: false, status: "错误" };
+  try {
+    const res = await fetch(API + "/storage/v1/object/review-photos/" + name, {
+      method: "POST",
+      headers: { ...H, "Content-Type": "image/jpeg", "x-upsert": "true" },
+      body: bytes
+    });
+    up = { ok: res.ok, status: res.status, body: (await res.text()).slice(0, 160) };
+  } catch (e) {
+    up.msg = e.message;
+  }
+  addRow("② 上传图片", up.ok ? "成功（" + up.status + "）" : String(up.status) + (up.msg ? " " + up.msg : ""), up.ok ? "ok" : "bad");
+  addRow("② 耗时", ms(performance.now() - t));
+  log("upload status=" + up.status + " body=" + (up.body || up.msg || ""));
+
+  // 3) 上传后公网读回
+  let rd = { ok: false, status: "跳过" };
+  if (up.ok) {
+    rd = await timed("read", () => fetch(API + "/storage/v1/object/public/review-photos/" + name, { cache: "no-store" }));
+    addRow("③ 读回图片", rd.ok ? "成功（" + rd.status + "）" : String(rd.status), rd.ok ? "ok" : "bad");
+    addRow("③ 耗时", ms(rd.dt));
+  } else {
+    addRow("③ 读回图片", "上一步失败，跳过", "wait");
+  }
+
+  // 4) 结论
+  if (r1.ok && up.ok && rd.ok) {
+    verdict.textContent = "✅ 这条路通，手机不开 VPN 也能用";
+    verdict.className = "big ok";
+  } else if (r1.ok && !up.ok) {
+    verdict.textContent = "⚠️ 能连数据库，但传不了图";
+    verdict.className = "big bad";
+  } else if (!r1.ok) {
+    verdict.textContent = "❌ 连不上，这条路走不通";
+    verdict.className = "big bad";
+  } else {
+    verdict.textContent = "⚠️ 传上去了但读不回来";
+    verdict.className = "big bad";
+  }
+  go.disabled = false;
+});
+
+// 生成一张很小的真实 JPEG（canvas 导出，避免伪造字节被存储桶拒绝）
+async function makeJpeg() {
+  const c = document.createElement("canvas");
+  c.width = 240; c.height = 160;
+  const x = c.getContext("2d");
+  x.fillStyle = "#c8452a"; x.fillRect(0, 0, 240, 160);
+  x.fillStyle = "#fff"; x.font = "bold 22px sans-serif"; x.textAlign = "center";
+  x.fillText("测试 " + new Date().toLocaleTimeString(), 120, 88);
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.8));
+  log("test blob bytes=" + blob.size);
+  return blob;
+}
+</script>
+</body>
+</html>
